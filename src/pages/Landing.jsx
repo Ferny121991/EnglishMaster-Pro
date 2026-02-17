@@ -128,6 +128,16 @@ export default function Landing() {
                         ))}
                     </motion.div>
                 </main>
+
+                {/* Footer */}
+                <footer className="max-w-6xl mx-auto px-8 py-12 border-t border-white/[0.06] text-center">
+                    <p className="text-xs text-white/20 font-medium tracking-widest uppercase mb-2">
+                        Hecho por <span className="text-neon-blue font-bold">FernelyDev</span>
+                    </p>
+                    <p className="text-[10px] text-white/10 uppercase tracking-tighter">
+                        EnglishMaster Pro &copy; {new Date().getFullYear()} — Premium LMS Experience
+                    </p>
+                </footer>
             </div>
 
             {/* Login Modal */}

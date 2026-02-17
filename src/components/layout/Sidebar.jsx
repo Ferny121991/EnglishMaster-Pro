@@ -143,6 +143,11 @@ export default function Sidebar({ mobileOpen, onClose }) {
                     <LogOut size={18} />
                     <span>Sign Out</span>
                 </button>
+                <div className="mt-4 text-center">
+                    <p className="text-[10px] text-white/20 font-medium tracking-widest uppercase">
+                        Hecho por <span className="text-neon-blue">FernelyDev</span>
+                    </p>
+                </div>
             </div>
         </aside>
     );
