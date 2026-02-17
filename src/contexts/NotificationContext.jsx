@@ -14,7 +14,7 @@ export function useNotifications() {
 
 export function NotificationProvider({ children }) {
     const { user, isTeacher, isStudent } = useAuth();
-    const { classes, assignments, submissions, announcements } = useClasses();
+    const { classes, assignments, submissions, announcements, classMessages } = useClasses();
     const [readIds, setReadIds] = useState(new Set());
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -158,6 +158,24 @@ export function NotificationProvider({ children }) {
                 }
             });
 
+            // 6. Chat messages from others (last 24h)
+            const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+            (classMessages || []).forEach(m => {
+                if (m.authorId === user.uid) return; // skip own messages
+                if (m.createdAt < oneDayAgo) return; // only recent
+                const cls = classes.find(c => c.id === m.classId);
+                generated.push({
+                    id: `chat-${m.id}`,
+                    type: 'chat_message',
+                    title: 'New Chat Message',
+                    message: `${m.authorName || 'Someone'} in ${cls?.name || 'class'}: "${(m.text || '').substring(0, 60)}${(m.text || '').length > 60 ? '...' : ''}"`,
+                    icon: 'megaphone',
+                    color: m.authorRole === 'teacher' ? 'blue' : 'purple',
+                    createdAt: m.createdAt,
+                    link: `/classes/${m.classId}`,
+                });
+            });
+
         } else if (isTeacher) {
             // Teacher notifications
 
@@ -208,6 +226,25 @@ export function NotificationProvider({ children }) {
                     });
                 }
             });
+
+            // 3. Chat messages from students (last 24h)
+            const oneDayAgoT = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+            (classMessages || []).forEach(m => {
+                if (m.authorId === user.uid) return;
+                if (m.createdAt < oneDayAgoT) return;
+                const cls = classes.find(c => c.id === m.classId);
+                if (!cls) return;
+                generated.push({
+                    id: `chat-${m.id}`,
+                    type: 'chat_message',
+                    title: 'New Chat Message',
+                    message: `${m.authorName || 'Someone'} in ${cls?.name || 'class'}: "${(m.text || '').substring(0, 60)}${(m.text || '').length > 60 ? '...' : ''}"`,
+                    icon: 'megaphone',
+                    color: 'blue',
+                    createdAt: m.createdAt,
+                    link: `/classes/${m.classId}`,
+                });
+            });
         }
 
         // Sort by date (newest first) and deduplicate
@@ -223,7 +260,7 @@ export function NotificationProvider({ children }) {
         );
 
         setNotifications(sorted);
-    }, [user, isTeacher, isStudent, classes, assignments, submissions, announcements, loading]);
+    }, [user, isTeacher, isStudent, classes, assignments, submissions, announcements, classMessages, loading]);
 
     // Mark notification as read
     const markAsRead = useCallback(async (notificationId) => {

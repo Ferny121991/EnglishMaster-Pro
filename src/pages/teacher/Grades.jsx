@@ -5,11 +5,11 @@ import TopBar from '../../components/layout/TopBar';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     BarChart3, Award, TrendingUp, CheckCircle2, X, Clock, Search,
-    Filter, ChevronRight, Eye, AlertTriangle
+    Filter, ChevronRight, Eye, AlertTriangle, RotateCcw
 } from 'lucide-react';
 
 export default function Grades() {
-    const { classes, assignments, submissions, allStudents, updateSubmission, bulkGradeSubmissions } = useClasses();
+    const { classes, assignments, submissions, allStudents, updateSubmission, deleteSubmission, bulkGradeSubmissions } = useClasses();
     const toast = useToast();
     const [selectedSub, setSelectedSub] = useState(null);
     const [filterClass, setFilterClass] = useState('all');
@@ -26,6 +26,16 @@ export default function Grades() {
             setSelectedSub(null);
         } catch (e) {
             toast.error('Failed to save grade');
+        }
+    };
+
+    const handleRetake = async (subId) => {
+        try {
+            await deleteSubmission(subId);
+            toast.success('Submission deleted — student can retake the assignment');
+            setSelectedSub(null);
+        } catch (e) {
+            toast.error('Failed to allow retake');
         }
     };
 
@@ -200,6 +210,7 @@ export default function Grades() {
                         student={selectedSub.student}
                         onClose={() => setSelectedSub(null)}
                         onGrade={handleGrade}
+                        onRetake={handleRetake}
                     />
                 )}
             </AnimatePresence>
@@ -207,7 +218,7 @@ export default function Grades() {
     );
 }
 
-function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
+function ReviewModal({ submission, assignment, student, onClose, onGrade, onRetake }) {
     // Build per-question scores: auto-graded get calculated, manual start at 0
     const initScores = () => {
         const scores = {};
@@ -216,9 +227,14 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
             if (q.type === 'multiple-choice' || q.type === 'true-false') {
                 const correctOption = q.options?.[q.correctAnswer];
                 scores[idx] = studentAnswer === correctOption ? (q.points || 0) : 0;
-            } else if (q.type === 'fill-in-blank') {
-                const isCorrect = (studentAnswer || '').trim().toLowerCase() === (q.correctText || '').trim().toLowerCase();
-                scores[idx] = isCorrect ? (q.points || 0) : 0;
+            } else if (q.type === 'fill-in-blank' || q.type === 'word-scramble' || q.type === 'error-correction' || q.type === 'translation') {
+                const sa = (studentAnswer || '').trim().toLowerCase();
+                const ca = (q.correctText || '').trim().toLowerCase();
+                scores[idx] = (sa && ca && sa === ca) ? (q.points || 0) : 0;
+            } else if (q.type === 'sentence-builder') {
+                const sa = (studentAnswer || '').trim().toLowerCase();
+                const ca = (q.correctSentence || '').trim().toLowerCase();
+                scores[idx] = (sa && ca && sa === ca) ? (q.points || 0) : 0;
             } else if (q.type === 'ordering') {
                 const correct = q.items || [];
                 const isCorrect = JSON.stringify(studentAnswer) === JSON.stringify(correct);
@@ -240,6 +256,12 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
         'short-answer': 'Short Answer',
         'essay': 'Essay',
         'ordering': 'Ordering',
+        'word-scramble': 'Word Scramble',
+        'sentence-builder': 'Sentence Builder',
+        'error-correction': 'Error Correction',
+        'translation': 'Translation',
+        'categorize': 'Categorize',
+        'matching': 'Matching',
     };
 
     return (
@@ -261,7 +283,10 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
                         const isAutoGradable = q.type === 'multiple-choice' || q.type === 'true-false';
                         const isFillBlank = q.type === 'fill-in-blank';
                         const isOrdering = q.type === 'ordering';
+                        const isTextMatch = q.type === 'word-scramble' || q.type === 'sentence-builder' || q.type === 'error-correction' || q.type === 'translation';
                         const isManual = q.type === 'essay' || q.type === 'short-answer';
+                        const isCategorize = q.type === 'categorize';
+                        const isMatching = q.type === 'matching';
 
                         // Auto-grade logic for display
                         let correctAnswer = null;
@@ -269,26 +294,50 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
                         if (isAutoGradable) {
                             correctAnswer = q.options?.[q.correctAnswer];
                             isCorrect = studentAnswer === correctAnswer;
-                        } else if (isFillBlank) {
+                        } else if (isFillBlank || q.type === 'word-scramble' || q.type === 'error-correction' || q.type === 'translation') {
                             correctAnswer = q.correctText;
-                            isCorrect = (studentAnswer || '').trim().toLowerCase() === (correctAnswer || '').trim().toLowerCase();
+                            const sa = (studentAnswer || '').trim().toLowerCase();
+                            const ca = (correctAnswer || '').trim().toLowerCase();
+                            isCorrect = sa && ca && sa === ca;
+                        } else if (q.type === 'sentence-builder') {
+                            correctAnswer = q.correctSentence;
+                            const sa = (studentAnswer || '').trim().toLowerCase();
+                            const ca = (correctAnswer || '').trim().toLowerCase();
+                            isCorrect = sa && ca && sa === ca;
                         } else if (isOrdering) {
                             isCorrect = JSON.stringify(studentAnswer) === JSON.stringify(q.items || []);
+                        } else if (isCategorize) {
+                            const cats = q.categories || [];
+                            const allItems = cats.reduce((acc, cat, cIdx) => [...acc, ...cat.items.map(() => cIdx)], []);
+                            isCorrect = studentAnswer && typeof studentAnswer === 'object' &&
+                                allItems.every((correctCatIdx, itemIdx) => studentAnswer[itemIdx] === correctCatIdx);
+                        } else if (isMatching) {
+                            isCorrect = (q.pairs || []).every((pair, i) => studentAnswer?.[i] === pair.right);
                         }
 
                         const qScore = questionScores[idx];
+                        const isAutoType = isAutoGradable || isFillBlank || isOrdering || isTextMatch || isCategorize || isMatching;
                         const borderColor = isManual
                             ? 'bg-white/[0.02] border-white/[0.04]'
                             : isCorrect
                                 ? 'bg-neon-green/5 border-neon-green/20'
                                 : 'bg-red-500/5 border-red-500/20';
 
+                        // Safe display string for student answer
+                        const displayAnswer = (() => {
+                            if (studentAnswer == null) return '— No answer —';
+                            if (typeof studentAnswer === 'string') return studentAnswer || '— No answer —';
+                            if (Array.isArray(studentAnswer)) return studentAnswer.join(', ') || '— No answer —';
+                            if (typeof studentAnswer === 'object') return JSON.stringify(studentAnswer);
+                            return String(studentAnswer);
+                        })();
+
                         return (
                             <div key={idx} className={`p-4 rounded-xl border ${borderColor}`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <p className="text-xs text-white/40">Q{idx + 1} — {QUESTION_LABELS[q.type] || q.type}</p>
                                     <div className="flex items-center gap-2">
-                                        {(isAutoGradable || isFillBlank || isOrdering) && (
+                                        {isAutoType && (
                                             <span className={`text-xs font-bold ${isCorrect ? 'text-neon-green' : 'text-red-400'}`}>
                                                 {isCorrect ? `✓ +${q.points}` : '✗ 0'}
                                             </span>
@@ -326,13 +375,48 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
                                                 <p className="text-white/30 text-sm">— No answer —</p>
                                             )}
                                         </div>
+                                    ) : isMatching ? (
+                                        <div className="space-y-1">
+                                            {(q.pairs || []).map((pair, i) => (
+                                                <div key={i} className="flex items-center gap-2 text-sm">
+                                                    <span className="text-white/60">{pair.left}</span>
+                                                    <span className="text-white/20">→</span>
+                                                    <span className={studentAnswer?.[i] === pair.right ? 'text-neon-green' : 'text-red-400'}>
+                                                        {studentAnswer?.[i] || '—'}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : isCategorize ? (
+                                        <div className="space-y-4 mt-2">
+                                            {(q.categories || []).map((cat, cIdx) => {
+                                                const allItems = (q.categories || []).reduce((acc, c) => [...acc, ...(c.items || [])], []);
+                                                const studentItemsInCat = Object.entries(studentAnswer || {})
+                                                    .filter(([_, catId]) => Number(catId) === cIdx)
+                                                    .map(([itemId]) => allItems[itemId])
+                                                    .filter(Boolean);
+
+                                                return (
+                                                    <div key={cIdx} className="bg-white/[0.03] p-2 rounded-lg mb-2">
+                                                        <p className="text-xs text-white/50 mb-2 uppercase font-bold">{cat.name}</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {studentItemsInCat.length > 0 ? studentItemsInCat.map((item, i) => (
+                                                                <span key={i} className="px-2 py-1 bg-neon-blue/10 border border-neon-blue/20 rounded text-xs text-white">
+                                                                    {item}
+                                                                </span>
+                                                            )) : <span className="text-xs text-white/20 italic">No items placed</span>}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     ) : (
-                                        <p className="text-white/80 text-sm whitespace-pre-wrap">{studentAnswer || '— No answer —'}</p>
+                                        <p className="text-white/80 text-sm whitespace-pre-wrap">{displayAnswer}</p>
                                     )}
                                 </div>
 
                                 {/* Show correct answer for wrong auto-graded */}
-                                {(isAutoGradable || isFillBlank) && !isCorrect && correctAnswer && (
+                                {(isAutoGradable || isFillBlank || isTextMatch) && !isCorrect && correctAnswer && (
                                     <div className="mt-2 p-2 rounded-lg bg-neon-green/5 border border-neon-green/10">
                                         <p className="text-xs text-neon-green">✓ Correct: {correctAnswer}</p>
                                     </div>
@@ -342,6 +426,14 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
                                         <p className="text-xs text-neon-green mb-1">✓ Correct order:</p>
                                         {(q.items || []).map((item, i) => (
                                             <p key={i} className="text-xs text-neon-green/70 ml-2">{i + 1}. {item}</p>
+                                        ))}
+                                    </div>
+                                )}
+                                {isMatching && !isCorrect && (
+                                    <div className="mt-2 p-2 rounded-lg bg-neon-green/5 border border-neon-green/10">
+                                        <p className="text-xs text-neon-green mb-1">✓ Correct matches:</p>
+                                        {(q.pairs || []).map((pair, i) => (
+                                            <p key={i} className="text-xs text-neon-green/70 ml-2">{pair.left} → {pair.right}</p>
                                         ))}
                                     </div>
                                 )}
@@ -366,6 +458,12 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade }) {
                         className="btn-neon h-12 px-6 sm:px-8 flex items-center justify-center gap-2 disabled:opacity-40"
                     >
                         <CheckCircle2 size={18} /> {submission.grade != null ? 'Update' : 'Save'} Grade
+                    </button>
+                    <button
+                        onClick={() => onRetake(submission.id)}
+                        className="h-12 px-5 rounded-xl bg-neon-orange/10 border border-neon-orange/20 text-neon-orange text-sm font-medium flex items-center justify-center gap-2 hover:bg-neon-orange/20 transition-all"
+                    >
+                        <RotateCcw size={16} /> Allow Retake
                     </button>
                 </div>
             </motion.div>

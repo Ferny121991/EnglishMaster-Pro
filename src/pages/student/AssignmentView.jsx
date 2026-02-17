@@ -10,6 +10,18 @@ import {
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
+// Stable shuffle using seed
+function seededShuffle(arr, seed) {
+    const a = [...arr];
+    let s = seed;
+    for (let i = a.length - 1; i > 0; i--) {
+        s = (s * 9301 + 49297) % 233280;
+        const j = Math.floor((s / 233280) * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
 export default function AssignmentView() {
     const { assignmentId } = useParams();
     const navigate = useNavigate();
@@ -139,8 +151,9 @@ export default function AssignmentView() {
                         grade += (q.points || 0);
                     }
                 } else if (q.type === 'fill-in-blank') {
-                    // Case-insensitive exact match
-                    if ((studentAnswer || '').trim().toLowerCase() === (q.correctText || '').trim().toLowerCase()) {
+                    const sa = (studentAnswer || '').trim().toLowerCase();
+                    const ca = (q.correctText || '').trim().toLowerCase();
+                    if (sa && ca && sa === ca) {
                         grade += (q.points || 0);
                     }
                 } else if (q.type === 'ordering') {
@@ -148,13 +161,16 @@ export default function AssignmentView() {
                         grade += (q.points || 0);
                     }
                 } else if (q.type === 'matching') {
-                    // Check if every pair is correct
                     const allCorrect = (q.pairs || []).every((pair, i) => studentAnswer?.[i] === pair.right);
                     if (allCorrect) grade += (q.points || 0);
                 } else if (q.type === 'word-scramble') {
-                    if ((studentAnswer || '').trim().toLowerCase() === (q.correctText || '').trim().toLowerCase()) grade += (q.points || 0);
+                    const sa = (studentAnswer || '').trim().toLowerCase();
+                    const ca = (q.correctText || '').trim().toLowerCase();
+                    if (sa && ca && sa === ca) grade += (q.points || 0);
                 } else if (q.type === 'sentence-builder') {
-                    if ((studentAnswer || '').trim().toLowerCase() === (q.correctSentence || '').trim().toLowerCase()) grade += (q.points || 0);
+                    const sa = (studentAnswer || '').trim().toLowerCase();
+                    const ca = (q.correctSentence || '').trim().toLowerCase();
+                    if (sa && ca && sa === ca) grade += (q.points || 0);
                 } else if (q.type === 'categorize') {
                     // Check if every item is in correct category
                     // studentAnswer is object: { itemId: categoryIndex }
@@ -369,6 +385,9 @@ export default function AssignmentView() {
                                 const isFillBlank = q.type === 'fill-in-blank';
                                 const isOrdering = q.type === 'ordering';
                                 const isManual = q.type === 'essay' || q.type === 'short-answer';
+                                const isWordScramble = q.type === 'word-scramble';
+                                const isSentenceBuilder = q.type === 'sentence-builder';
+                                const isTextMatch = isWordScramble || isSentenceBuilder || q.type === 'error-correction' || q.type === 'translation';
 
                                 let correctOption = null;
                                 let isCorrect = false;
@@ -377,9 +396,33 @@ export default function AssignmentView() {
                                     isCorrect = studentAnswer === correctOption;
                                 } else if (isFillBlank) {
                                     correctOption = q.correctText;
-                                    isCorrect = (studentAnswer || '').trim().toLowerCase() === (correctOption || '').trim().toLowerCase();
+                                    const sa = (studentAnswer || '').trim().toLowerCase();
+                                    const ca = (correctOption || '').trim().toLowerCase();
+                                    isCorrect = sa && ca && sa === ca;
                                 } else if (isOrdering) {
                                     isCorrect = JSON.stringify(studentAnswer) === JSON.stringify(q.items || []);
+                                } else if (isWordScramble || q.type === 'error-correction' || q.type === 'translation') {
+                                    correctOption = q.correctText;
+                                    const sa = (studentAnswer || '').trim().toLowerCase();
+                                    const ca = (correctOption || '').trim().toLowerCase();
+                                    isCorrect = sa && ca && sa === ca;
+                                } else if (isSentenceBuilder) {
+                                    correctOption = q.correctSentence;
+                                    const sa = (studentAnswer || '').trim().toLowerCase();
+                                    const ca = (correctOption || '').trim().toLowerCase();
+                                    isCorrect = sa && ca && sa === ca;
+                                } else if (q.type === 'categorize') {
+                                    let allRight = true;
+                                    let gi = 0;
+                                    (q.categories || []).forEach((cat, cIdx) => {
+                                        (cat.items || []).forEach(() => {
+                                            if (studentAnswer?.[gi] !== cIdx) allRight = false;
+                                            gi++;
+                                        });
+                                    });
+                                    isCorrect = allRight && gi > 0;
+                                } else if (q.type === 'matching') {
+                                    isCorrect = (q.pairs || []).every((pair, i) => studentAnswer?.[i] === pair.right);
                                 }
 
                                 const borderClass = isManual ? 'border-l-neon-blue' : isCorrect ? 'border-l-neon-green' : 'border-l-red-500';
@@ -460,6 +503,37 @@ export default function AssignmentView() {
                                                                 ))}
                                                             </div>
                                                         )}
+                                                    </div>
+                                                )}
+
+                                                {/* Text-match review (word-scramble, sentence-builder, error-correction, translation) */}
+                                                {isTextMatch && (
+                                                    <div className="space-y-2">
+                                                        <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                                                            <p className="text-xs text-white/30 uppercase mb-1">Your answer:</p>
+                                                            <p className="text-sm text-white/60">{studentAnswer || 'No answer provided'}</p>
+                                                        </div>
+                                                        {!isCorrect && correctOption && (
+                                                            <div className="p-2 rounded-lg bg-neon-green/5 border border-neon-green/10">
+                                                                <p className="text-xs text-neon-green">✓ Correct: {correctOption}</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Categorize review */}
+                                                {q.type === 'categorize' && (
+                                                    <div className="space-y-2">
+                                                        <p className="text-xs text-white/30 uppercase mb-1">Your categorization:</p>
+                                                        <p className="text-sm text-white/60">{isCorrect ? 'All items correctly categorized' : 'Some items were incorrectly categorized'}</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Matching review */}
+                                                {q.type === 'matching' && (
+                                                    <div className="space-y-2">
+                                                        <p className="text-xs text-white/30 uppercase mb-1">Your matches:</p>
+                                                        <p className="text-sm text-white/60">{isCorrect ? 'All pairs matched correctly' : 'Some pairs were incorrect'}</p>
                                                     </div>
                                                 )}
 
@@ -663,55 +737,24 @@ export default function AssignmentView() {
 
                                                 {/* Word Scramble */}
                                                 {q.type === 'word-scramble' && (
-                                                    <div className="space-y-4">
-                                                        <div className="flex flex-wrap gap-2 justify-center p-4 bg-white/[0.02] rounded-xl border border-white/5">
-                                                            {(q.correctText || '').split('').sort(() => Math.random() - 0.5).map((char, i) => (
-                                                                <span key={i} className="w-8 h-8 flex items-center justify-center bg-neon-purple/10 border border-neon-purple/30 rounded text-neon-purple font-bold">
-                                                                    {char}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Unscramble the word..."
-                                                            value={answers[idx] || ''}
-                                                            onChange={(e) => setAnswers({ ...answers, [idx]: e.target.value })}
-                                                            className="input-glass w-full text-center tracking-widest font-bold text-lg"
-                                                        />
-                                                    </div>
+                                                    <WordScrambleQuestion
+                                                        q={q}
+                                                        idx={idx}
+                                                        answers={answers}
+                                                        setAnswers={setAnswers}
+                                                        startTimer={startTimer}
+                                                    />
                                                 )}
 
                                                 {/* Sentence Builder */}
                                                 {q.type === 'sentence-builder' && (
-                                                    <div className="space-y-4">
-                                                        <p className="text-xs text-white/40">Tap words to build the sentence:</p>
-                                                        <div className="flex flex-wrap gap-2 justify-center min-h-[40px] p-3 rounded-xl bg-black/20 border border-white/5">
-                                                            {/* Pool of words (shuffled) - needing state for available words would be complex here, 
-                                                                so we simplify: just show words and let them type or click to append */}
-                                                            {(q.correctSentence || '').split(' ').sort(() => Math.random() - 0.5).map((word, i) => (
-                                                                <button
-                                                                    key={i}
-                                                                    type="button"
-                                                                    onClick={() => setAnswers({ ...answers, [idx]: (answers[idx] ? answers[idx] + ' ' : '') + word })}
-                                                                    className="px-2 py-1 rounded bg-neon-blue/10 text-neon-blue border border-neon-blue/20 text-xs hover:bg-neon-blue/20"
-                                                                >
-                                                                    {word}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                        <div className="relative">
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Type or click words above..."
-                                                                value={answers[idx] || ''}
-                                                                onChange={(e) => setAnswers({ ...answers, [idx]: e.target.value })}
-                                                                className="input-glass w-full"
-                                                            />
-                                                            {(answers[idx] || '').length > 0 && (
-                                                                <button type="button" onClick={() => setAnswers({ ...answers, [idx]: '' })} className="absolute right-2 top-2 text-xs text-red-400 hover:text-red-300">Clear</button>
-                                                            )}
-                                                        </div>
-                                                    </div>
+                                                    <SentenceBuilderQuestion
+                                                        q={q}
+                                                        idx={idx}
+                                                        answers={answers}
+                                                        setAnswers={setAnswers}
+                                                        startTimer={startTimer}
+                                                    />
                                                 )}
 
                                                 {/* Categorize */}
@@ -812,6 +855,140 @@ export default function AssignmentView() {
                     </div>
                 )}
             </motion.div>
+        </div>
+    );
+}
+
+// ─── WORD SCRAMBLE with real-time letter feedback ─────────────
+function WordScrambleQuestion({ q, idx, answers, setAnswers, startTimer }) {
+    const correctText = q.correctText || '';
+    const shuffledLetters = useMemo(() => {
+        const chars = correctText.split('');
+        return seededShuffle(chars, correctText.length * 7 + idx * 31 + 42);
+    }, [correctText, idx]);
+
+    const typed = answers[idx] || '';
+    const correctLower = correctText.toLowerCase();
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-wrap gap-2 justify-center p-4 bg-white/[0.02] rounded-xl border border-white/5">
+                {shuffledLetters.map((char, i) => (
+                    <span key={i} className="w-8 h-8 flex items-center justify-center bg-neon-purple/10 border border-neon-purple/30 rounded text-neon-purple font-bold text-sm">
+                        {char}
+                    </span>
+                ))}
+            </div>
+            {/* Live letter feedback */}
+            <div className="flex flex-wrap gap-1.5 justify-center min-h-[40px] p-3 rounded-xl bg-black/20 border border-white/5">
+                {typed.length > 0 ? typed.split('').map((ch, i) => {
+                    const isCorrectPos = i < correctLower.length && ch.toLowerCase() === correctLower[i];
+                    return (
+                        <span key={i} className={`w-8 h-8 flex items-center justify-center rounded font-bold text-sm border transition-all duration-200 ${isCorrectPos
+                                ? 'bg-neon-green/15 border-neon-green/40 text-neon-green'
+                                : 'bg-red-500/15 border-red-500/40 text-red-400'
+                            }`}>
+                            {ch}
+                        </span>
+                    );
+                }) : (
+                    <span className="text-xs text-white/20">Type below to see letter feedback...</span>
+                )}
+            </div>
+            <input
+                type="text"
+                placeholder="Unscramble the word..."
+                value={typed}
+                onChange={(e) => {
+                    startTimer?.();
+                    setAnswers(prev => ({ ...prev, [idx]: e.target.value }));
+                }}
+                className="input-glass w-full text-center tracking-widest font-bold text-lg"
+            />
+        </div>
+    );
+}
+
+// ─── SENTENCE BUILDER with tracked word pool ─────────────────
+function SentenceBuilderQuestion({ q, idx, answers, setAnswers, startTimer }) {
+    const correctSentence = q.correctSentence || '';
+    const words = useMemo(() => correctSentence.split(' ').filter(Boolean), [correctSentence]);
+    const shuffledWords = useMemo(() => {
+        return seededShuffle(words, correctSentence.length * 13 + idx * 37 + 99);
+    }, [words, correctSentence.length, idx]);
+
+    const currentAnswer = answers[idx] || '';
+    const usedWords = currentAnswer ? currentAnswer.split(' ').filter(Boolean) : [];
+
+    // Track which shuffled word indices have been used
+    const availableIndices = useMemo(() => {
+        const used = [...usedWords];
+        const taken = new Set();
+        used.forEach(w => {
+            for (let i = 0; i < shuffledWords.length; i++) {
+                if (!taken.has(i) && shuffledWords[i] === w) {
+                    taken.add(i);
+                    break;
+                }
+            }
+        });
+        return shuffledWords.map((_, i) => !taken.has(i));
+    }, [shuffledWords, usedWords]);
+
+    const handleWordClick = (word) => {
+        startTimer?.();
+        setAnswers(prev => ({ ...prev, [idx]: (prev[idx] ? prev[idx] + ' ' : '') + word }));
+    };
+
+    const handleRemoveLastWord = () => {
+        const w = usedWords.slice(0, -1).join(' ');
+        setAnswers(prev => ({ ...prev, [idx]: w }));
+    };
+
+    return (
+        <div className="space-y-4">
+            <p className="text-xs text-white/40">Tap words to build the sentence:</p>
+            {/* Word pool */}
+            <div className="flex flex-wrap gap-2 justify-center min-h-[44px] p-3 rounded-xl bg-black/20 border border-white/5">
+                {shuffledWords.map((word, i) => (
+                    <button
+                        key={i}
+                        type="button"
+                        disabled={!availableIndices[i]}
+                        onClick={() => handleWordClick(word)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 ${availableIndices[i]
+                                ? 'bg-neon-blue/10 text-neon-blue border-neon-blue/20 hover:bg-neon-blue/20 hover:scale-105 cursor-pointer'
+                                : 'bg-white/[0.02] text-white/10 border-white/[0.03] cursor-not-allowed'
+                            }`}
+                    >
+                        {word}
+                    </button>
+                ))}
+            </div>
+            {/* Built sentence display */}
+            <div className="relative">
+                <div className="flex flex-wrap gap-1.5 min-h-[44px] p-3 rounded-xl bg-white/[0.02] border border-white/5 items-center">
+                    {usedWords.length > 0 ? usedWords.map((w, i) => (
+                        <span key={i} className="px-2 py-1 rounded bg-neon-green/10 text-neon-green border border-neon-green/20 text-sm font-medium">
+                            {w}
+                        </span>
+                    )) : (
+                        <span className="text-xs text-white/20">Click words above to build sentence...</span>
+                    )}
+                </div>
+                <div className="flex justify-end gap-2 mt-2">
+                    {usedWords.length > 0 && (
+                        <>
+                            <button type="button" onClick={handleRemoveLastWord} className="text-xs text-neon-orange hover:text-neon-orange/80 px-2 py-1 rounded-lg bg-neon-orange/5 border border-neon-orange/10">
+                                Undo
+                            </button>
+                            <button type="button" onClick={() => setAnswers(prev => ({ ...prev, [idx]: '' }))} className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded-lg bg-red-500/5 border border-red-500/10">
+                                Clear
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

@@ -41,7 +41,7 @@ const studentLinks = [
 ];
 
 export default function Sidebar({ mobileOpen, onClose }) {
-    const { userProfile, isTeacher, logout } = useAuth();
+    const { userProfile, isTeacher, isAdmin, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -56,6 +56,18 @@ export default function Sidebar({ mobileOpen, onClose }) {
         await logout();
         navigate('/');
     };
+
+    const getRoleBadge = () => {
+        if (isAdmin && isTeacher) {
+            return { label: 'Maestro · Admin', bgClass: 'bg-amber-500/10 text-amber-400 border border-amber-500/20', dotClass: 'bg-amber-400' };
+        }
+        if (isTeacher) {
+            return { label: 'Maestro', bgClass: 'bg-neon-purple/10 text-neon-purple border border-neon-purple/20', dotClass: 'bg-neon-purple' };
+        }
+        return { label: 'Estudiante', bgClass: 'bg-neon-green/10 text-neon-green border border-neon-green/20', dotClass: 'bg-neon-green' };
+    };
+
+    const roleBadge = getRoleBadge();
 
     return (
         <aside
@@ -87,9 +99,9 @@ export default function Sidebar({ mobileOpen, onClose }) {
 
             {/* Role badge */}
             <div className="px-5 pt-4 pb-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isTeacher ? 'bg-neon-purple/10 text-neon-purple border border-neon-purple/20' : 'bg-neon-green/10 text-neon-green border border-neon-green/20'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${isTeacher ? 'bg-neon-purple' : 'bg-neon-green'}`} />
-                    {isTeacher ? 'Teacher' : 'Student'}
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${roleBadge.bgClass}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${roleBadge.dotClass}`} />
+                    {roleBadge.label}
                 </span>
             </div>
 

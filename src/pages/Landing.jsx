@@ -302,6 +302,9 @@ function LoginModal({ role, isRegister, setIsRegister, onClose, onDemoLogin }) {
                         </p>
                     )}
                 </div>
+                <p className="text-center text-xs text-white/20 mt-4">
+                    Protected by reCAPTCHA and subject to the Google Privacy Policy and Terms of Service. v1.1.0
+                </p>
             </motion.div>
         </motion.div>
     );

@@ -8,7 +8,7 @@ import { useState } from 'react';
 
 export default function Students() {
     const { classes, allStudents, deleteStudent, updateStudent, getStudentClasses, getStudentProgress } = useClasses();
-    const { preRegisterStudent } = useAuth();
+    const { preRegisterStudent, isAdmin } = useAuth();
     const toast = useToast();
     const [search, setSearch] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -25,7 +25,16 @@ export default function Students() {
     const [editName, setEditName] = useState('');
     const [editEmail, setEditEmail] = useState('');
 
-    const filtered = allStudents.filter(s =>
+    // Non-admin teachers only see students in THEIR classes
+    const myStudentIds = isAdmin
+        ? null // admin sees all
+        : new Set(classes.flatMap(c => c.students || []));
+
+    const visibleStudents = isAdmin
+        ? allStudents
+        : allStudents.filter(s => myStudentIds.has(s.id));
+
+    const filtered = visibleStudents.filter(s =>
         (s.displayName || '').toLowerCase().includes(search.toLowerCase()) ||
         (s.email || '').toLowerCase().includes(search.toLowerCase())
     );
@@ -201,14 +210,18 @@ export default function Students() {
                                     </div>
                                 </div>
                                 <div className="col-span-2 flex items-center justify-end gap-1">
-                                    <button onClick={() => openEdit(s)} className="p-2 rounded-lg text-white/20 hover:text-neon-blue hover:bg-neon-blue/10 transition-all" title="Edit"><Edit3 size={16} /></button>
-                                    {confirmDelete === s.id ? (
-                                        <div className="flex items-center gap-1">
-                                            <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-white/40 px-2 py-1 rounded-lg hover:bg-white/5">Cancel</button>
-                                            <button onClick={() => handleDeleteStudent(s)} className="text-[10px] text-red-400 bg-red-500/10 px-2 py-1 rounded-lg font-bold hover:bg-red-500/20">Delete</button>
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => setConfirmDelete(s.id)} className="p-2 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete"><Trash2 size={16} /></button>
+                                    {isAdmin && (
+                                        <button onClick={() => openEdit(s)} className="p-2 rounded-lg text-white/20 hover:text-neon-blue hover:bg-neon-blue/10 transition-all" title="Edit"><Edit3 size={16} /></button>
+                                    )}
+                                    {isAdmin && (
+                                        confirmDelete === s.id ? (
+                                            <div className="flex items-center gap-1">
+                                                <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-white/40 px-2 py-1 rounded-lg hover:bg-white/5">Cancel</button>
+                                                <button onClick={() => handleDeleteStudent(s)} className="text-[10px] text-red-400 bg-red-500/10 px-2 py-1 rounded-lg font-bold hover:bg-red-500/20">Delete</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setConfirmDelete(s.id)} className="p-2 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete"><Trash2 size={16} /></button>
+                                        )
                                     )}
                                 </div>
                             </motion.div>
@@ -252,14 +265,18 @@ export default function Students() {
                                         <span>{enrolledClasses.length} classes</span>
                                     </div>
                                     <div className="flex items-center gap-1">
-                                        <button onClick={() => openEdit(s)} className="p-2 rounded-lg text-white/30 hover:text-neon-blue transition-all"><Edit3 size={14} /></button>
-                                        {confirmDelete === s.id ? (
-                                            <div className="flex items-center gap-1">
-                                                <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-white/40 px-2 py-1 rounded-lg">No</button>
-                                                <button onClick={() => handleDeleteStudent(s)} className="text-[10px] text-red-400 bg-red-500/10 px-2 py-1 rounded-lg font-bold">Yes</button>
-                                            </div>
-                                        ) : (
-                                            <button onClick={() => setConfirmDelete(s.id)} className="p-2 rounded-lg text-white/30 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
+                                        {isAdmin && (
+                                            <button onClick={() => openEdit(s)} className="p-2 rounded-lg text-white/30 hover:text-neon-blue transition-all"><Edit3 size={14} /></button>
+                                        )}
+                                        {isAdmin && (
+                                            confirmDelete === s.id ? (
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-white/40 px-2 py-1 rounded-lg">No</button>
+                                                    <button onClick={() => handleDeleteStudent(s)} className="text-[10px] text-red-400 bg-red-500/10 px-2 py-1 rounded-lg font-bold">Yes</button>
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => setConfirmDelete(s.id)} className="p-2 rounded-lg text-white/30 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
+                                            )
                                         )}
                                     </div>
                                 </div>

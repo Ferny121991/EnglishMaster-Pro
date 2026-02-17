@@ -8,8 +8,9 @@ import {
     updateProfile,
     GoogleAuthProvider,
     signInWithPopup,
+    sendPasswordResetEmail,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 const AuthContext = createContext(null);
 
@@ -19,9 +20,12 @@ export function useAuth() {
     return ctx;
 }
 
+// Admin email — only this account can delete students from the system
+const ADMIN_EMAIL = 'vidacristiana21@gmail.com';
+
 // Pre-registered accounts (work with both Firebase and demo fallback)
 const KNOWN_ACCOUNTS = {
-    'vidacristiana21@gmail.com': { displayName: 'Prof. Teodoro', role: 'teacher', password: 'Teadoro12' },
+    [ADMIN_EMAIL]: { displayName: 'Prof. Teodoro', role: 'teacher', password: 'Teadoro12' },
 };
 
 export function AuthProvider({ children }) {
@@ -92,7 +96,7 @@ export function AuthProvider({ children }) {
                     let profile = docSnap.data();
 
                     // SAFETY CHECK: Force Teacher role for the main admin account if it somehow got corrupted
-                    if (email.toLowerCase() === 'vidacristiana21@gmail.com' && profile.role !== 'teacher') {
+                    if (email.toLowerCase() === ADMIN_EMAIL && profile.role !== 'teacher') {
                         console.warn("Correcting role for admin account...");
                         profile.role = 'teacher';
                         await setDoc(docRef, { role: 'teacher' }, { merge: true }).catch(err => console.warn("Failed to update admin role:", err));
@@ -371,6 +375,39 @@ export function AuthProvider({ children }) {
         }
     };
 
+    // Teacher resets a student's access code
+    const resetStudentCode = async (email) => {
+        if (!user) throw new Error('Please log in as a teacher.');
+        const cleanEmail = email.trim().toLowerCase();
+        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        try {
+            // Update or create the pre_registered entry with the new code
+            const docRef = doc(db, 'pre_registered', cleanEmail);
+            const existing = await getDoc(docRef);
+
+            await setDoc(docRef, {
+                ...(existing.exists() ? existing.data() : { email: cleanEmail, createdBy: user.uid }),
+                code: newCode,
+                resetAt: new Date().toISOString(),
+            }, { merge: true });
+
+            // Also try to send Firebase's password reset email
+            // This only works if the student already has a Firebase Auth account
+            try {
+                await sendPasswordResetEmail(auth, cleanEmail);
+            } catch (e) {
+                // Ignore — student may not have an account yet (pre-registered only)
+                console.log('Password reset email skipped (student may not have auth account):', e.code);
+            }
+
+            return newCode;
+        } catch (e) {
+            console.error('Error resetting student code:', e);
+            throw new Error('Failed to reset student code: ' + e.message);
+        }
+    };
+
     const isProduction = window.location.hostname !== 'localhost' && !window.location.hostname.includes('127.0.0.1');
 
     const value = {
@@ -386,8 +423,10 @@ export function AuthProvider({ children }) {
         isProduction,
         isTeacher: userProfile?.role === 'teacher',
         isStudent: userProfile?.role === 'student',
+        isAdmin: userProfile?.email?.toLowerCase() === ADMIN_EMAIL,
         preRegisterStudent,
         loginWithStudentCode,
+        resetStudentCode,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

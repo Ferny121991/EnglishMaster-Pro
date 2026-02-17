@@ -14,7 +14,8 @@ import {
     getDoc,
     arrayRemove,
     arrayUnion,
-    writeBatch
+    writeBatch,
+    orderBy
 } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 
@@ -39,7 +40,9 @@ export function ClassProvider({ children }) {
     const [assignments, setAssignments] = useState([]);
     const [submissions, setSubmissions] = useState([]);
     const [announcements, setAnnouncements] = useState([]);
+    const [classMessages, setClassMessages] = useState([]);
     const [allStudents, setAllStudents] = useState([]);
+    const [teacherRequests, setTeacherRequests] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -85,10 +88,32 @@ export function ClassProvider({ children }) {
         };
     }, [user, isTeacher]);
 
+    // Listen for teacher requests (for students)
+    useEffect(() => {
+        if (!user) { setTeacherRequests([]); return; }
+
+        if (isStudent) {
+            // Student sees requests sent TO them
+            const q = query(collection(db, 'teacher_requests'), where('studentId', '==', user.uid), where('status', '==', 'pending'));
+            const unsub = onSnapshot(q, (snap) => {
+                setTeacherRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            });
+            return unsub;
+        } else if (isTeacher) {
+            // Teacher sees requests they sent
+            const q = query(collection(db, 'teacher_requests'), where('teacherId', '==', user.uid));
+            const unsub = onSnapshot(q, (snap) => {
+                setTeacherRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            });
+            return unsub;
+        }
+    }, [user, isTeacher, isStudent]);
+
     useEffect(() => {
         if (classes.length === 0) {
             setAssignments([]);
             setAnnouncements([]);
+            setClassMessages([]);
             return;
         }
 
@@ -124,19 +149,70 @@ export function ClassProvider({ children }) {
     useEffect(() => {
         if (!user) return;
 
-        let sq;
         if (isTeacher) {
-            sq = collection(db, 'submissions');
+            // Teacher: only fetch submissions for assignments in THEIR classes
+            if (assignments.length === 0) {
+                setSubmissions([]);
+                return;
+            }
+            const assignmentIds = assignments.map(a => a.id);
+            const chunkedIds = [];
+            for (let i = 0; i < assignmentIds.length; i += 10) {
+                chunkedIds.push(assignmentIds.slice(i, i + 10));
+            }
+            if (chunkedIds.length === 0) {
+                setSubmissions([]);
+                return;
+            }
+            const unsubs = chunkedIds.map(chunk => {
+                const q = query(collection(db, 'submissions'), where('assignmentId', 'in', chunk));
+                return onSnapshot(q, (snapshot) => {
+                    setSubmissions(prev => {
+                        const chunkSet = new Set(chunk);
+                        const others = prev.filter(p => !chunkSet.has(p.assignmentId));
+                        const newDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        return [...others, ...newDocs];
+                    });
+                });
+            });
+            return () => unsubs.forEach(u => u());
         } else {
-            sq = query(collection(db, 'submissions'), where('studentId', '==', user.uid));
+            // Student: fetch submissions for all assignments in my classes to enable Leaderboard
+            if (assignments.length === 0) {
+                // Return early but don't clear submissions to avoid flash if possible, 
+                // though strictly if assignments became empty, submissions should too.
+                // But initially `assignments` is empty, avoiding clearing helps? 
+                // Actually `assignments` loads fast.
+                return;
+            }
+
+            const assignmentIds = assignments.map(a => a.id);
+            const chunkedIds = [];
+            for (let i = 0; i < assignmentIds.length; i += 10) {
+                chunkedIds.push(assignmentIds.slice(i, i + 10));
+            }
+
+            if (chunkedIds.length === 0) {
+                setSubmissions([]);
+                return;
+            }
+
+            const unsubs = chunkedIds.map(chunk => {
+                const q = query(collection(db, 'submissions'), where('assignmentId', 'in', chunk));
+                return onSnapshot(q, (snapshot) => {
+                    setSubmissions(prev => {
+                        const chunkSet = new Set(chunk);
+                        // Remove any submissions belonging to assignments in this chunk (to replace with new snapshot)
+                        const others = prev.filter(p => !chunkSet.has(p.assignmentId));
+                        const newDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        return [...others, ...newDocs];
+                    });
+                });
+            });
+
+            return () => unsubs.forEach(u => u());
         }
-
-        const unsub = onSnapshot(sq, (snapshot) => {
-            setSubmissions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
-
-        return unsub;
-    }, [user, isTeacher]);
+    }, [user, isTeacher, assignments]);
 
     // ──────────────────────────────────────────
     // CLASS CRUD
@@ -344,6 +420,10 @@ export function ClassProvider({ children }) {
         });
     };
 
+    const deleteSubmission = async (id) => {
+        await deleteDoc(doc(db, 'submissions', id));
+    };
+
     // 9. Bulk grade submissions
     const bulkGradeSubmissions = async (submissionUpdates) => {
         // submissionUpdates = [{ id, grade, feedback }, ...]
@@ -404,6 +484,122 @@ export function ClassProvider({ children }) {
     const deleteClassMaterial = async (materialId) => {
         await deleteDoc(doc(db, 'materials', materialId));
     };
+
+    // ──────────────────────────────────────────
+    // CLASS CHAT MESSAGES
+    // ──────────────────────────────────────────
+
+    // Listen for chat messages in user's classes
+    useEffect(() => {
+        if (classes.length === 0) { setClassMessages([]); return; }
+        const classIds = classes.map(c => c.id);
+        const chunkedIds = [];
+        for (let i = 0; i < classIds.length; i += 10) {
+            chunkedIds.push(classIds.slice(i, i + 10));
+        }
+        const unsubs = chunkedIds.map(chunk => {
+            // Only filter by classId — sort client-side to avoid needing a composite index
+            const q = query(collection(db, 'class_messages'), where('classId', 'in', chunk));
+            return onSnapshot(q, snap => {
+                setClassMessages(prev => {
+                    const others = prev.filter(m => !chunk.includes(m.classId));
+                    const newMsgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    // Sort by createdAt client-side
+                    newMsgs.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+                    return [...others, ...newMsgs];
+                });
+            }, (error) => {
+                console.error('Chat listener error:', error);
+            });
+        });
+
+        // Auto-cleanup: delete messages older than 7 days
+        const cleanup = async () => {
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            for (const chunk of chunkedIds) {
+                try {
+                    const q = query(collection(db, 'class_messages'), where('classId', 'in', chunk));
+                    const snap = await getDocs(q);
+                    const batch = writeBatch(db);
+                    let count = 0;
+                    snap.docs.forEach(d => {
+                        if (d.data().createdAt < sevenDaysAgo) {
+                            batch.delete(d.ref);
+                            count++;
+                        }
+                    });
+                    if (count > 0) await batch.commit();
+                } catch (e) { console.error('Chat cleanup error:', e); }
+            }
+        };
+        cleanup();
+
+        return () => unsubs.forEach(u => u());
+    }, [classes]);
+
+    const addClassMessage = async (classId, text, authorName, authorRole) => {
+        const msg = {
+            classId,
+            text,
+            authorId: user.uid,
+            authorName,
+            authorRole,
+            createdAt: new Date().toISOString(),
+        };
+        await addDoc(collection(db, 'class_messages'), msg);
+    };
+
+    const deleteClassMessage = async (messageId) => {
+        await deleteDoc(doc(db, 'class_messages', messageId));
+    };
+
+    const getClassMessages = (classId) => classMessages.filter(m => m.classId === classId);
+
+    // ──────────────────────────────────────────
+    // TEACHER REQUESTS
+    // ──────────────────────────────────────────
+    const sendTeacherRequest = async (classId, studentId) => {
+        // Check if request already exists
+        const existing = teacherRequests.find(r => r.classId === classId && r.studentId === studentId && r.status === 'pending');
+        if (existing) throw new Error('Request already sent to this student for this class.');
+
+        // Check if student is already in the class
+        const cls = classes.find(c => c.id === classId);
+        if (cls?.students?.includes(studentId)) throw new Error('Student is already in this class.');
+
+        const student = allStudents.find(s => s.id === studentId);
+        const request = {
+            teacherId: user.uid,
+            teacherName: userProfile?.displayName || 'Teacher',
+            studentId,
+            studentName: student?.displayName || 'Student',
+            classId,
+            className: cls?.name || 'Class',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+        };
+        await addDoc(collection(db, 'teacher_requests'), request);
+    };
+
+    const respondToRequest = async (requestId, accept) => {
+        const request = teacherRequests.find(r => r.id === requestId);
+        if (!request) throw new Error('Request not found.');
+
+        if (accept) {
+            // Add student to the class
+            const classRef = doc(db, 'classes', request.classId);
+            await updateDoc(classRef, {
+                students: arrayUnion(request.studentId)
+            });
+            // Update request status
+            await updateDoc(doc(db, 'teacher_requests', requestId), { status: 'accepted', respondedAt: new Date().toISOString() });
+        } else {
+            await updateDoc(doc(db, 'teacher_requests', requestId), { status: 'rejected', respondedAt: new Date().toISOString() });
+        }
+    };
+
+    const getMyPendingRequests = () => teacherRequests.filter(r => r.status === 'pending' && r.studentId === user?.uid);
+    const getTeacherRequestsForClass = (classId) => teacherRequests.filter(r => r.classId === classId);
 
     // ──────────────────────────────────────────
     // ANALYTICS & HELPERS
@@ -633,6 +829,7 @@ export function ClassProvider({ children }) {
         // Submissions
         submitAssignment,
         updateSubmission,
+        deleteSubmission,
         bulkGradeSubmissions,
         // Announcements
         addAnnouncement,
@@ -658,6 +855,17 @@ export function ClassProvider({ children }) {
         getLeaderboard,
         getClassAnalytics,
         getStudentStreak,
+        // Chat
+        classMessages,
+        addClassMessage,
+        deleteClassMessage,
+        getClassMessages,
+        // Teacher Requests
+        teacherRequests,
+        sendTeacherRequest,
+        respondToRequest,
+        getMyPendingRequests,
+        getTeacherRequestsForClass,
     };
 
     return <ClassContext.Provider value={value}>{children}</ClassContext.Provider>;

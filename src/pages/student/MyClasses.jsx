@@ -6,17 +6,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
     BookOpen, Users, ClipboardList, ChevronRight, LogOut, Star,
-    Search
+    Search, MessageCircle, Check, X, Bell
 } from 'lucide-react';
 import { useState } from 'react';
 
 export default function MyClasses() {
     const { userProfile } = useAuth();
-    const { classes, assignments, submissions, leaveClass, getAssignmentCompletionRate } = useClasses();
+    const { classes, assignments, submissions, leaveClass, getAssignmentCompletionRate, getMyPendingRequests, respondToRequest } = useClasses();
     const toast = useToast();
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
     const [confirmLeave, setConfirmLeave] = useState(null);
+    const [respondingId, setRespondingId] = useState(null);
 
     const uid = userProfile?.uid;
     const myClasses = classes.filter(c => c.students?.includes(uid) && !c.archived);
@@ -39,6 +40,20 @@ export default function MyClasses() {
     const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.08 } } };
     const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
+    const pendingRequests = getMyPendingRequests();
+
+    const handleRespond = async (requestId, accept) => {
+        setRespondingId(requestId);
+        try {
+            await respondToRequest(requestId, accept);
+            toast.success(accept ? '¡Te uniste a la clase!' : 'Solicitud rechazada.');
+        } catch (e) {
+            toast.error('Error: ' + e.message);
+        } finally {
+            setRespondingId(null);
+        }
+    };
+
     return (
         <div className="min-h-screen pb-20">
             <TopBar
@@ -57,6 +72,58 @@ export default function MyClasses() {
                         className="input-glass pl-11"
                     />
                 </motion.div>
+
+                {/* Pending Teacher Requests */}
+                {pendingRequests.length > 0 && (
+                    <motion.div variants={item} className="space-y-3">
+                        <div className="flex items-center gap-2">
+                            <Bell size={16} className="text-amber-400" />
+                            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                                Solicitudes Pendientes
+                            </h2>
+                            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                                {pendingRequests.length}
+                            </span>
+                        </div>
+                        {pendingRequests.map(req => (
+                            <motion.div
+                                key={req.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, x: -50 }}
+                                className="glass-card p-4 border border-amber-500/10"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400 shrink-0">
+                                        <BookOpen size={18} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-white truncate">{req.className}</p>
+                                        <p className="text-xs text-white/40 truncate">de {req.teacherName}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            onClick={() => handleRespond(req.id, false)}
+                                            disabled={respondingId === req.id}
+                                            className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50"
+                                            title="Rechazar"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleRespond(req.id, true)}
+                                            disabled={respondingId === req.id}
+                                            className="p-2 rounded-lg bg-neon-green/10 text-neon-green hover:bg-neon-green/20 transition-all disabled:opacity-50"
+                                            title="Aceptar"
+                                        >
+                                            <Check size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                )}
 
                 {/* Empty state */}
                 {filteredClasses.length === 0 ? (
@@ -138,6 +205,12 @@ export default function MyClasses() {
                                                 className="flex-1 btn-ghost flex items-center justify-center gap-2 text-sm py-2 rounded-lg"
                                             >
                                                 <ClipboardList size={14} /> Assignments
+                                            </button>
+                                            <button
+                                                onClick={() => navigate(`/class/${cls.id}?tab=chat`)}
+                                                className="flex-1 btn-ghost flex items-center justify-center gap-2 text-sm py-2 rounded-lg"
+                                            >
+                                                <MessageCircle size={14} /> Chat
                                             </button>
                                             <button
                                                 onClick={() => setConfirmLeave(cls.id)}

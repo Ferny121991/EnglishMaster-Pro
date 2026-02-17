@@ -255,26 +255,30 @@ export default function Assignments() {
                                                 <Clock size={12} /> {daysLeft}d left
                                             </span>
                                         )}
-                                        <span className="flex items-center gap-1">
-                                            <Users size={12} /> {subs.length}/{totalStudents} submitted
-                                        </span>
+                                        {isTeacher && (
+                                            <span className="flex items-center gap-1">
+                                                <Users size={12} /> {subs.length}/{totalStudents} submitted
+                                            </span>
+                                        )}
                                     </div>
 
                                     {/* Progress Bar */}
-                                    <div className="mt-4">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Submission Progress</span>
-                                            <span className="text-xs text-white/50 font-medium">{submissionRate}%</span>
+                                    {isTeacher && (
+                                        <div className="mt-4">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-[10px] text-white/30 uppercase tracking-wider">Submission Progress</span>
+                                                <span className="text-xs text-white/50 font-medium">{submissionRate}%</span>
+                                            </div>
+                                            <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                                                <motion.div
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${submissionRate}%` }}
+                                                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                                                    className={`h-full rounded-full bg-gradient-to-r ${config.gradient}`}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                                            <motion.div
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${submissionRate}%` }}
-                                                transition={{ duration: 0.8, ease: 'easeOut' }}
-                                                className={`h-full rounded-full bg-gradient-to-r ${config.gradient}`}
-                                            />
-                                        </div>
-                                    </div>
+                                    )}
 
                                     {/* Expanded Content */}
                                     <AnimatePresence>
@@ -288,22 +292,24 @@ export default function Assignments() {
                                             >
                                                 <div className="mt-4 pt-4 border-t border-white/[0.06] space-y-3">
                                                     {/* Stats mini-grid */}
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        <div className="rounded-lg bg-white/[0.03] p-3 text-center">
-                                                            <p className="text-lg font-bold text-white">{a.questions?.length || 0}</p>
-                                                            <p className="text-[10px] text-white/30 uppercase">Questions</p>
+                                                    {isTeacher && (
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <div className="rounded-lg bg-white/[0.03] p-3 text-center">
+                                                                <p className="text-lg font-bold text-white">{a.questions?.length || 0}</p>
+                                                                <p className="text-[10px] text-white/30 uppercase">Questions</p>
+                                                            </div>
+                                                            <div className="rounded-lg bg-white/[0.03] p-3 text-center">
+                                                                <p className="text-lg font-bold text-white">{subs.filter(s => s.grade != null).length}</p>
+                                                                <p className="text-[10px] text-white/30 uppercase">Graded</p>
+                                                            </div>
+                                                            <div className="rounded-lg bg-white/[0.03] p-3 text-center">
+                                                                <p className={`text-lg font-bold ${avgGrade !== null ? (avgGrade >= 80 ? 'text-neon-green' : avgGrade >= 60 ? 'text-neon-orange' : 'text-red-400') : 'text-white/30'}`}>
+                                                                    {avgGrade !== null ? `${avgGrade}%` : '—'}
+                                                                </p>
+                                                                <p className="text-[10px] text-white/30 uppercase">Avg Grade</p>
+                                                            </div>
                                                         </div>
-                                                        <div className="rounded-lg bg-white/[0.03] p-3 text-center">
-                                                            <p className="text-lg font-bold text-white">{subs.filter(s => s.grade != null).length}</p>
-                                                            <p className="text-[10px] text-white/30 uppercase">Graded</p>
-                                                        </div>
-                                                        <div className="rounded-lg bg-white/[0.03] p-3 text-center">
-                                                            <p className={`text-lg font-bold ${avgGrade !== null ? (avgGrade >= 80 ? 'text-neon-green' : avgGrade >= 60 ? 'text-neon-orange' : 'text-red-400') : 'text-white/30'}`}>
-                                                                {avgGrade !== null ? `${avgGrade}%` : '—'}
-                                                            </p>
-                                                            <p className="text-[10px] text-white/30 uppercase">Avg Grade</p>
-                                                        </div>
-                                                    </div>
+                                                    )}
 
                                                     {/* Type badge */}
                                                     <div className="flex items-center justify-between">
@@ -421,8 +427,11 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
         updated[idx] = { ...updated[idx], [field]: value };
         if (field === 'type') {
             const q = updated[idx];
-            q.options = []; q.items = []; q.pairs = undefined; q.categories = undefined;
-            q.correctText = undefined; q.correctSentence = undefined; q.errorSentence = undefined; q.sourceText = undefined;
+            // Remove all type-specific fields first
+            delete q.pairs; delete q.categories; delete q.correctText;
+            delete q.correctSentence; delete q.errorSentence; delete q.sourceText;
+            delete q.correctAnswer;
+            q.options = []; q.items = [];
             if (value === 'multiple-choice') { q.options = ['', '', '', '']; q.correctAnswer = 0; }
             else if (value === 'true-false') { q.options = ['True', 'False']; q.correctAnswer = 0; }
             else if (value === 'fill-in-blank') { q.correctText = ''; }
@@ -443,17 +452,21 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
         setQuestions(updated);
     };
 
+    // Strip undefined values from objects so Firestore doesn't reject them
+    const sanitize = (obj) => JSON.parse(JSON.stringify(obj));
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            const cleanQuestions = sanitize(questions);
             await onSave({
                 title,
                 description,
                 classId,
                 type,
                 dueDate: new Date(dueDate).toISOString(),
-                totalPoints: questions.reduce((acc, q) => acc + (Number(q.points) || 0), 0),
-                questions,
+                totalPoints: cleanQuestions.reduce((acc, q) => acc + (Number(q.points) || 0), 0),
+                questions: cleanQuestions,
                 timeLimit: Number(timeLimit) || 0,
             });
             toast.success(isEditing ? 'Assignment updated!' : 'Assignment created!');

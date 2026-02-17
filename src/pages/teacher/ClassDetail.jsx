@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useClasses } from '../../contexts/ClassContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -7,30 +7,42 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     BookOpen, Users, ClipboardList, ArrowLeft, Copy, Check,
     Plus, Calendar, Award, MessageSquare, Send, Clock, X, Search,
-    UserPlus, UserMinus, Pin, Trash2, Download, BarChart3
+    UserPlus, UserMinus, Pin, Trash2, Download, BarChart3, MessageCircle, KeyRound
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function ClassDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { userProfile } = useAuth();
+    const [searchParams] = useSearchParams();
+    const { userProfile, isTeacher, resetStudentCode } = useAuth();
     const {
         classes, getClassStudents, getClassAssignments, getClassAnnouncements,
         addAnnouncement, deleteAnnouncement, pinAnnouncement,
         removeStudentFromClass, allStudents, updateClass,
         submissions, getClassAnalytics, exportClassGrades, getLeaderboard,
-        getAssignmentCompletionRate
+        getAssignmentCompletionRate,
+        addClassMessage, deleteClassMessage, getClassMessages,
+        sendTeacherRequest, getTeacherRequestsForClass
     } = useClasses();
     const toast = useToast();
 
     const cls = classes.find(c => c.id === id);
-    const [tab, setTab] = useState('overview');
+    const [tab, setTab] = useState(searchParams.get('tab') || (isTeacher ? 'overview' : 'announcements'));
     const [copiedCode, setCopiedCode] = useState(false);
     const [newAnnouncement, setNewAnnouncement] = useState('');
     const [newAnnTitle, setNewAnnTitle] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(null);
+    const [chatMsg, setChatMsg] = useState('');
+    const chatEndRef = useRef(null);
+    const [resetCodeResult, setResetCodeResult] = useState(null); // { studentName, newCode }
+    const [resettingCode, setResettingCode] = useState(null); // student id being reset
+
+    useEffect(() => {
+        const t = searchParams.get('tab');
+        if (t) setTab(t);
+    }, [searchParams]);
 
     if (!cls) return (
         <div className="flex items-center justify-center h-screen">
@@ -100,7 +112,9 @@ export default function ClassDetail() {
         toast.success('Grades exported!');
     };
 
-    const tabs = ['overview', 'students', 'assignments', 'announcements'];
+    const tabs = isTeacher
+        ? ['overview', 'students', 'assignments', 'announcements', 'chat']
+        : ['announcements', 'chat'];
     const colorMap = { blue: 'from-neon-blue to-blue-600', purple: 'from-neon-purple to-purple-600', green: 'from-neon-green to-emerald-600', orange: 'from-neon-orange to-amber-600' };
 
     return (
@@ -283,13 +297,35 @@ export default function ClassDetail() {
                                             <button onClick={() => handleRemoveStudent(s.id)} className="text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-lg font-semibold hover:bg-red-500/20 transition-colors">Remove</button>
                                         </div>
                                     ) : (
-                                        <button
-                                            onClick={() => setConfirmRemove(s.id)}
-                                            className="p-2 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                                            title="Remove student"
-                                        >
-                                            <UserMinus size={16} />
-                                        </button>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                            <button
+                                                onClick={async () => {
+                                                    if (!s.email) { toast.error('No email for this student'); return; }
+                                                    setResettingCode(s.id);
+                                                    try {
+                                                        const newCode = await resetStudentCode(s.email);
+                                                        setResetCodeResult({ studentName: s.displayName, newCode });
+                                                        toast.success('New access code generated!');
+                                                    } catch (err) {
+                                                        toast.error(err.message);
+                                                    } finally {
+                                                        setResettingCode(null);
+                                                    }
+                                                }}
+                                                className="p-2 rounded-lg text-white/20 hover:text-neon-orange hover:bg-neon-orange/10 transition-all"
+                                                title="Reset access code"
+                                                disabled={resettingCode === s.id}
+                                            >
+                                                <KeyRound size={16} className={resettingCode === s.id ? 'animate-spin' : ''} />
+                                            </button>
+                                            <button
+                                                onClick={() => setConfirmRemove(s.id)}
+                                                className="p-2 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                                title="Remove student"
+                                            >
+                                                <UserMinus size={16} />
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             ))}
@@ -332,28 +368,38 @@ export default function ClassDetail() {
                 {/* ANNOUNCEMENTS TAB */}
                 {tab === 'announcements' && (
                     <div className="space-y-4">
-                        <div className="glass-card p-4 sm:p-5">
-                            <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                                <MessageSquare size={16} className="text-neon-blue" /> Post Announcement
-                            </h3>
-                            <input
-                                value={newAnnTitle}
-                                onChange={(e) => setNewAnnTitle(e.target.value)}
-                                placeholder="Announcement title..."
-                                className="input-glass mb-3"
-                            />
-                            <div className="flex gap-3">
-                                <textarea
-                                    value={newAnnouncement}
-                                    onChange={(e) => setNewAnnouncement(e.target.value)}
-                                    placeholder="Write your announcement..."
-                                    className="input-glass flex-1 h-20 resize-none"
+                        {/* Only teachers can post announcements */}
+                        {isTeacher && (
+                            <div className="glass-card p-4 sm:p-5">
+                                <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+                                    <MessageSquare size={16} className="text-neon-blue" /> Post Announcement
+                                </h3>
+                                <input
+                                    value={newAnnTitle}
+                                    onChange={(e) => setNewAnnTitle(e.target.value)}
+                                    placeholder="Announcement title..."
+                                    className="input-glass mb-3"
                                 />
-                                <button onClick={handlePostAnnouncement} className="btn-neon self-end px-4">
-                                    <Send size={16} />
-                                </button>
+                                <div className="flex gap-3">
+                                    <textarea
+                                        value={newAnnouncement}
+                                        onChange={(e) => setNewAnnouncement(e.target.value)}
+                                        placeholder="Write your announcement..."
+                                        className="input-glass flex-1 h-20 resize-none"
+                                    />
+                                    <button onClick={handlePostAnnouncement} className="btn-neon self-end px-4">
+                                        <Send size={16} />
+                                    </button>
+                                </div>
                             </div>
-                        </div>
+                        )}
+
+                        {classAnnouncements.length === 0 && (
+                            <div className="glass-card p-8 text-center">
+                                <MessageSquare size={40} className="mx-auto text-white/10 mb-3" />
+                                <p className="text-white/40 text-sm">No announcements yet.</p>
+                            </div>
+                        )}
 
                         {classAnnouncements
                             .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.createdAt) - new Date(a.createdAt))
@@ -365,20 +411,25 @@ export default function ClassDetail() {
                                             <h4 className="font-semibold text-white truncate">{ann.title}</h4>
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
-                                            <button
-                                                onClick={() => handlePinAnnouncement(ann.id, ann.pinned)}
-                                                className={`p-1.5 rounded-lg transition-all ${ann.pinned ? 'text-neon-orange' : 'text-white/20 hover:text-neon-orange'} hover:bg-white/5`}
-                                                title={ann.pinned ? 'Unpin' : 'Pin'}
-                                            >
-                                                <Pin size={14} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteAnnouncement(ann.id)}
-                                                className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                                title="Delete"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
+                                            {/* Only teachers can pin/delete */}
+                                            {isTeacher && (
+                                                <>
+                                                    <button
+                                                        onClick={() => handlePinAnnouncement(ann.id, ann.pinned)}
+                                                        className={`p-1.5 rounded-lg transition-all ${ann.pinned ? 'text-neon-orange' : 'text-white/20 hover:text-neon-orange'} hover:bg-white/5`}
+                                                        title={ann.pinned ? 'Unpin' : 'Pin'}
+                                                    >
+                                                        <Pin size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteAnnouncement(ann.id)}
+                                                        className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            )}
                                             <span className="text-xs text-white/30 ml-2">{new Date(ann.createdAt).toLocaleDateString()}</span>
                                         </div>
                                     </div>
@@ -388,6 +439,19 @@ export default function ClassDetail() {
                             ))}
                     </div>
                 )}
+
+                {/* CHAT TAB */}
+                {tab === 'chat' && (
+                    <ChatTab
+                        classId={id}
+                        isTeacher={isTeacher}
+                        userProfile={userProfile}
+                        addClassMessage={addClassMessage}
+                        deleteClassMessage={deleteClassMessage}
+                        getClassMessages={getClassMessages}
+                        toast={toast}
+                    />
+                )}
             </div>
 
             <AnimatePresence>
@@ -396,12 +460,21 @@ export default function ClassDetail() {
                         cls={cls}
                         allStudents={allStudents}
                         onClose={() => setIsAddModalOpen(false)}
-                        onAdd={(studentId) => {
-                            updateClass(cls.id, {
-                                students: [...(cls.students || []), studentId]
-                            });
-                            toast.success('Student added!');
+                        onSendRequest={async (studentId) => {
+                            try {
+                                await sendTeacherRequest(cls.id, studentId);
+                                toast.success('Solicitud enviada al estudiante!');
+                            } catch (e) {
+                                toast.error(e.message);
+                            }
                         }}
+                        pendingRequests={getTeacherRequestsForClass(cls.id)}
+                    />
+                )}
+                {resetCodeResult && (
+                    <ResetCodeModal
+                        result={resetCodeResult}
+                        onClose={() => setResetCodeResult(null)}
                     />
                 )}
             </AnimatePresence>
@@ -409,7 +482,7 @@ export default function ClassDetail() {
     );
 }
 
-function AddStudentModal({ cls, allStudents, onClose, onAdd }) {
+function AddStudentModal({ cls, allStudents, onClose, onSendRequest, pendingRequests = [] }) {
     const [search, setSearch] = useState('');
     const [copied, setCopied] = useState(false);
 
@@ -418,6 +491,8 @@ function AddStudentModal({ cls, allStudents, onClose, onAdd }) {
             s.email?.toLowerCase().includes(search.toLowerCase())) &&
         !(cls.students || []).includes(s.id)
     );
+
+    const hasPendingRequest = (studentId) => pendingRequests.some(r => r.studentId === studentId && r.status === 'pending');
 
     const handleCopy = () => {
         navigator.clipboard.writeText(cls.code);
@@ -460,26 +535,211 @@ function AddStudentModal({ cls, allStudents, onClose, onAdd }) {
                     <div className="max-h-60 overflow-y-auto space-y-1">
                         {filtered.length === 0 ? (
                             <p className="text-center py-8 text-white/40 text-sm">No students found.</p>
-                        ) : filtered.map(s => (
-                            <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/[0.04] group transition-all">
-                                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white shrink-0">
-                                    {s.displayName?.[0] || 'S'}
+                        ) : filtered.map(s => {
+                            const isPending = hasPendingRequest(s.id);
+                            return (
+                                <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/[0.04] group transition-all">
+                                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                                        {s.displayName?.[0] || 'S'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-white group-hover:text-neon-blue transition-colors truncate">{s.displayName}</p>
+                                        <p className="text-xs text-white/40 truncate">{s.email}</p>
+                                    </div>
+                                    {isPending ? (
+                                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">Pending</span>
+                                    ) : (
+                                        <button
+                                            onClick={() => { onSendRequest(s.id); }}
+                                            className="p-2 rounded-lg bg-neon-blue/10 text-neon-blue hover:bg-neon-blue/20 opacity-0 group-hover:opacity-100 transition-all"
+                                        >
+                                            <Plus size={16} />
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-white group-hover:text-neon-blue transition-colors truncate">{s.displayName}</p>
-                                    <p className="text-xs text-white/40 truncate">{s.email}</p>
-                                </div>
-                                <button
-                                    onClick={() => { onAdd(s.id); onClose(); }}
-                                    className="p-2 rounded-lg bg-neon-blue/10 text-neon-blue hover:bg-neon-blue/20 opacity-0 group-hover:opacity-100 transition-all"
-                                >
-                                    <Plus size={16} />
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </motion.div>
         </motion.div>
+    );
+}
+
+function ResetCodeModal({ result, onClose }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(result.newCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative glass-card w-full max-w-md overflow-hidden flex flex-col items-center text-center p-6 sm:p-8">
+                <div className="w-16 h-16 rounded-full bg-neon-orange/10 flex items-center justify-center mb-4">
+                    <KeyRound size={32} className="text-neon-orange" />
+                </div>
+
+                <h2 className="text-2xl font-display font-bold text-white mb-2">New Access Code</h2>
+                <p className="text-white/60 text-sm mb-6">
+                    A new code has been generated for <span className="text-white font-semibold">{result.studentName}</span>.
+                    <br />Please share this code with them immediately.
+                </p>
+
+                <div className="w-full flex items-center gap-2 mb-6">
+                    <div className="flex-1 p-4 rounded-xl bg-white/[0.04] border border-white/[0.06] font-mono text-3xl text-neon-orange tracking-widest">
+                        {result.newCode}
+                    </div>
+                    <button
+                        onClick={handleCopy}
+                        className="p-4 rounded-xl bg-neon-orange/10 border border-neon-orange/20 text-neon-orange hover:bg-neon-orange/20 transition-all"
+                    >
+                        {copied ? <Check size={24} /> : <Copy size={24} />}
+                    </button>
+                </div>
+
+                <p className="text-xs text-white/30 mb-6">
+                    Note: If the student already has an account, a password reset email has also been sent to their email address.
+                </p>
+
+                <button
+                    onClick={onClose}
+                    className="btn-primary w-full"
+                >
+                    Done
+                </button>
+            </motion.div>
+        </motion.div>
+    );
+}
+
+function ChatTab({ classId, isTeacher, userProfile, addClassMessage, deleteClassMessage, getClassMessages, toast }) {
+    const [msg, setMsg] = useState('');
+    const chatEndRef = useRef(null);
+    const messages = getClassMessages(classId);
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages.length]);
+
+    const handleSend = async () => {
+        const text = msg.trim();
+        if (!text) return;
+        try {
+            await addClassMessage(classId, text, userProfile?.displayName || 'User', isTeacher ? 'teacher' : 'student');
+            setMsg('');
+        } catch (e) {
+            toast.error('Failed to send message');
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    };
+
+    const handleDelete = async (id) => {
+        try {
+            await deleteClassMessage(id);
+            toast.info('Message deleted');
+        } catch (e) {
+            toast.error('Failed to delete');
+        }
+    };
+
+    const formatTime = (dateStr) => {
+        const d = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now - d;
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return d.toLocaleDateString();
+    };
+
+    return (
+        <div className="glass-card flex flex-col" style={{ height: '70vh' }}>
+            {/* Header */}
+            <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
+                <MessageCircle size={18} className="text-neon-green" />
+                <h3 className="font-semibold text-white">Class Chat</h3>
+                <span className="text-[10px] text-white/30 ml-auto uppercase tracking-wider">Messages auto-delete after 7 days</span>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                        <MessageCircle size={48} className="text-white/10 mb-3" />
+                        <p className="text-white/40 text-sm">No messages yet.</p>
+                        <p className="text-white/20 text-xs mt-1">Start the conversation!</p>
+                    </div>
+                )}
+                {messages.map(m => (
+                    <motion.div
+                        key={m.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="group flex gap-3"
+                    >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${m.authorRole === 'teacher'
+                            ? 'bg-gradient-to-br from-neon-blue to-neon-purple text-white'
+                            : 'bg-white/10 text-white/60'
+                            }`}>
+                            {m.authorName?.[0] || '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                                <span className="text-sm font-medium text-white truncate">{m.authorName}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${m.authorRole === 'teacher'
+                                    ? 'bg-neon-blue/10 text-neon-blue border border-neon-blue/20'
+                                    : 'bg-white/[0.06] text-white/40 border border-white/[0.06]'
+                                    }`}>
+                                    {m.authorRole === 'teacher' ? 'Teacher' : 'Student'}
+                                </span>
+                                <span className="text-[10px] text-white/20">{formatTime(m.createdAt)}</span>
+                            </div>
+                            <p className="text-sm text-white/70 break-words whitespace-pre-wrap">{m.text}</p>
+                        </div>
+                        {isTeacher && (
+                            <button
+                                onClick={() => handleDelete(m.id)}
+                                className="p-1.5 rounded-lg text-white/10 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all self-start"
+                                title="Delete message"
+                            >
+                                <Trash2 size={13} />
+                            </button>
+                        )}
+                    </motion.div>
+                ))}
+                <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="p-3 border-t border-white/[0.06]">
+                <div className="flex gap-2">
+                    <input
+                        value={msg}
+                        onChange={(e) => setMsg(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Type a message..."
+                        className="input-glass flex-1"
+                    />
+                    <button
+                        onClick={handleSend}
+                        disabled={!msg.trim()}
+                        className="btn-neon px-4 disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                        <Send size={16} />
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
