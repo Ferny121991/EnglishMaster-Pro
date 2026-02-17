@@ -1,0 +1,133 @@
+﻿[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 2125 modules transformed.
+node.exe : 
+[31mx[39m Build 
+failed in 3.79s
+At line:1 char:1
++ & "F:\Program Files\
+nodejs/node.exe" 
+"F:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: ([31mx[39   
+ m Build failed in    
+ 3.79s:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+[31merror during 
+build:
+[31msrc/App.jsx 
+(2:7): "default" is 
+not exported by "src/c
+omponents/ProtectedRou
+te.jsx", imported by 
+"src/App.jsx".[31m
+file: [36mC:/Users/so
+sa1/.gemini/antigravit
+y/playground/silent-ro
+cket/src/App.jsx:2:7[
+31m
+[33m
+1: import { Routes, 
+Route, Navigate } 
+from 
+'react-router-dom';
+2: import 
+ProtectedRoute from '.
+/components/ProtectedR
+oute';
+          ^
+3: import LandingPage 
+from 
+'./pages/LandingPage';
+4: import LoginPage 
+from './pages/auth/Log
+inPage';
+[31m
+    at getRollupError 
+(file:///C:/Users/sosa
+1/.gemini/antigravity/
+playground/silent-rock
+et/node_modules/rollup
+/dist/es/shared/parseA
+st.js:400:41)
+    at error (file:///
+C:/Users/sosa1/.gemini
+/antigravity/playgroun
+d/silent-rocket/node_m
+odules/rollup/dist/es/
+shared/parseAst.js:396
+:42)
+    at Module.error (f
+ile:///C:/Users/sosa1/
+.gemini/antigravity/pl
+ayground/silent-rocket
+/node_modules/rollup/d
+ist/es/shared/node-ent
+ry.js:17036:16)
+    at 
+Module.traceVariable (
+file:///C:/Users/sosa1
+/.gemini/antigravity/p
+layground/silent-rocke
+t/node_modules/rollup/
+dist/es/shared/node-en
+try.js:17448:29)
+    at ModuleScope.fin
+dVariable (file:///C:/
+Users/sosa1/.gemini/an
+tigravity/playground/s
+ilent-rocket/node_modu
+les/rollup/dist/es/sha
+red/node-entry.js:1506
+6:39)
+    at FunctionScope.f
+indVariable (file:///C
+:/Users/sosa1/.gemini/
+antigravity/playground
+/silent-rocket/node_mo
+dules/rollup/dist/es/s
+hared/node-entry.js:56
+73:38)
+    at FunctionBodySco
+pe.findVariable (file:
+///C:/Users/sosa1/.gem
+ini/antigravity/playgr
+ound/silent-rocket/nod
+e_modules/rollup/dist/
+es/shared/node-entry.j
+s:5673:38)
+    at 
+Identifier.bind (file:
+///C:/Users/sosa1/.gem
+ini/antigravity/playgr
+ound/silent-rocket/nod
+e_modules/rollup/dist/
+es/shared/node-entry.j
+s:5447:40)
+    at 
+CallExpression.bind (f
+ile:///C:/Users/sosa1/
+.gemini/antigravity/pl
+ayground/silent-rocket
+/node_modules/rollup/d
+ist/es/shared/node-ent
+ry.js:2825:28)
+    at 
+CallExpression.bind (f
+ile:///C:/Users/sosa1/
+.gemini/antigravity/pl
+ayground/silent-rocket
+/node_modules/rollup/d
+ist/es/shared/node-ent
+ry.js:12179:15)[39m
