@@ -145,7 +145,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
                 </button>
                 <div className="mt-4 text-center">
                     <p className="text-[10px] text-white/20 font-medium tracking-widest uppercase">
-                        Hecho por <span className="text-neon-blue">FernelyDev</span>
+                        Hecho por <a href="https://fernelydev.com/" target="_blank" rel="noopener noreferrer" className="text-neon-blue hover:underline">FernelyDev</a>
                     </p>
                 </div>
             </div>

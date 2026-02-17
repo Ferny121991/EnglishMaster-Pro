@@ -132,7 +132,7 @@ export default function Landing() {
                 {/* Footer */}
                 <footer className="max-w-6xl mx-auto px-8 py-12 border-t border-white/[0.06] text-center">
                     <p className="text-xs text-white/20 font-medium tracking-widest uppercase mb-2">
-                        Hecho por <span className="text-neon-blue font-bold">FernelyDev</span>
+                        Hecho por <a href="https://fernelydev.com/" target="_blank" rel="noopener noreferrer" className="text-neon-blue font-bold hover:underline">FernelyDev</a>
                     </p>
                     <p className="text-[10px] text-white/10 uppercase tracking-tighter">
                         EnglishMaster Pro &copy; {new Date().getFullYear()} — Premium LMS Experience
