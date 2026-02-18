@@ -579,8 +579,8 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
                             <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="input-glass h-24 resize-none p-3" placeholder="Provide clear instructions for your students..." />
                         </div>
 
-                        <div className="space-y-4">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-white/5 pb-2 gap-2">
+                        <div className="space-y-4 relative">
+                            <div className="sticky top-0 z-20 bg-surface-900/95 backdrop-blur-xl py-3 -mx-6 px-6 shadow-2xl border-b border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <label className="text-xs text-white/50 uppercase tracking-wider font-bold">
                                         Coursework Questions ({questions.length})
