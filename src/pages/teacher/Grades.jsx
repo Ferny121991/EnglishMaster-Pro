@@ -22,7 +22,12 @@ export default function Grades() {
     const handleGrade = async (id, grade, questionScores) => {
         try {
             const numericGrade = Math.round(Number(grade));
-            await updateSubmission(id, { grade: numericGrade, questionScores, status: 'graded' });
+            await updateSubmission(id, {
+                grade: numericGrade,
+                questionScores,
+                status: 'graded',
+                gradedAt: new Date().toISOString(),
+            });
             toast.success(`Grade saved: ${numericGrade} pts`);
             setSelectedSub(null);
         } catch (e) {

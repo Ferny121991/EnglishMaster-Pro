@@ -14,7 +14,7 @@ export function useNotifications() {
 
 export function NotificationProvider({ children }) {
     const { user, isTeacher, isStudent } = useAuth();
-    const { classes, assignments, submissions, announcements, classMessages } = useClasses();
+    const { classes, assignments, submissions, announcements, classMessages, classMaterials } = useClasses();
     const [readIds, setReadIds] = useState(new Set());
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -176,6 +176,26 @@ export function NotificationProvider({ children }) {
                 });
             });
 
+            // 7. New materials (posted in last 7 days)
+            const studentClassIds2 = classes.map(c => c.id);
+            (classMaterials || []).forEach(mat => {
+                if (!studentClassIds2.includes(mat.classId)) return;
+                const createdAt = new Date(mat.createdAt);
+                const daysSince = (now - createdAt) / (1000 * 60 * 60 * 24);
+                if (daysSince > 7) return;
+                const cls = classes.find(c => c.id === mat.classId);
+                generated.push({
+                    id: `material-${mat.id}`,
+                    type: 'new_material',
+                    title: '📁 New Material Available',
+                    message: `${cls?.name || 'Your class'}: "${mat.title}" was added by your teacher`,
+                    icon: 'folder',
+                    color: 'green',
+                    createdAt: mat.createdAt,
+                    link: `/classes/${mat.classId}?tab=materials`,
+                });
+            });
+
         } else if (isTeacher) {
             // Teacher notifications
 
@@ -260,7 +280,7 @@ export function NotificationProvider({ children }) {
         );
 
         setNotifications(sorted);
-    }, [user, isTeacher, isStudent, classes, assignments, submissions, announcements, classMessages, loading]);
+    }, [user, isTeacher, isStudent, classes, assignments, submissions, announcements, classMessages, classMaterials, loading]);
 
     // Mark notification as read
     const markAsRead = useCallback(async (notificationId) => {

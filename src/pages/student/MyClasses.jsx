@@ -207,7 +207,7 @@ export default function MyClasses() {
                                                 <ClipboardList size={14} /> Assignments
                                             </button>
                                             <button
-                                                onClick={() => navigate(`/class/${cls.id}?tab=chat`)}
+                                                onClick={() => navigate(`/classes/${cls.id}?tab=chat`)}
                                                 className="flex-1 btn-ghost flex items-center justify-center gap-2 text-sm py-2 rounded-lg"
                                             >
                                                 <MessageCircle size={14} /> Chat
