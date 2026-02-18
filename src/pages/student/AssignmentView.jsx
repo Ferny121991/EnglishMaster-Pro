@@ -6,7 +6,7 @@ import TopBar from '../../components/layout/TopBar';
 import { motion } from 'framer-motion';
 import {
     BookOpen, Clock, Award, ChevronLeft, CheckCircle2, XCircle,
-    Send, AlertTriangle, Trophy, Timer
+    Send, AlertTriangle, Trophy, Timer, GripVertical, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
@@ -659,39 +659,15 @@ export default function AssignmentView() {
                                                     </div>
                                                 )}
 
-                                                {/* Ordering */}
+                                                {/* Ordering — Drag & Drop */}
                                                 {isOrdering && (
-                                                    <div className="space-y-2">
-                                                        <p className="text-xs text-white/30 mb-2">Drag or use arrows to arrange in the correct order:</p>
-                                                        {(Array.isArray(answers[idx]) ? answers[idx] : []).map((item, ii) => (
-                                                            <div key={ii} className="flex items-center gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:border-neon-blue/20 transition-all">
-                                                                <span className="text-neon-blue font-bold text-xs w-5 text-center">{ii + 1}</span>
-                                                                <span className="text-sm text-white/80 flex-1">{item}</span>
-                                                                <div className="flex gap-1">
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={ii === 0}
-                                                                        onClick={() => {
-                                                                            const arr = [...answers[idx]];
-                                                                            [arr[ii - 1], arr[ii]] = [arr[ii], arr[ii - 1]];
-                                                                            setAnswers({ ...answers, [idx]: arr });
-                                                                        }}
-                                                                        className="p-1 rounded text-white/20 hover:text-neon-blue disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-xs"
-                                                                    >▲</button>
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={ii === (answers[idx] || []).length - 1}
-                                                                        onClick={() => {
-                                                                            const arr = [...answers[idx]];
-                                                                            [arr[ii + 1], arr[ii]] = [arr[ii], arr[ii + 1]];
-                                                                            setAnswers({ ...answers, [idx]: arr });
-                                                                        }}
-                                                                        className="p-1 rounded text-white/20 hover:text-neon-blue disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-xs"
-                                                                    >▼</button>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                    <DraggableOrderingList
+                                                        items={Array.isArray(answers[idx]) ? answers[idx] : []}
+                                                        onChange={(newOrder) => {
+                                                            startTimer();
+                                                            setAnswers({ ...answers, [idx]: newOrder });
+                                                        }}
+                                                    />
                                                 )}
 
                                                 {/* Essay */}
@@ -885,8 +861,8 @@ function WordScrambleQuestion({ q, idx, answers, setAnswers, startTimer }) {
                     const isCorrectPos = i < correctLower.length && ch.toLowerCase() === correctLower[i];
                     return (
                         <span key={i} className={`w-8 h-8 flex items-center justify-center rounded font-bold text-sm border transition-all duration-200 ${isCorrectPos
-                                ? 'bg-neon-green/15 border-neon-green/40 text-neon-green'
-                                : 'bg-red-500/15 border-red-500/40 text-red-400'
+                            ? 'bg-neon-green/15 border-neon-green/40 text-neon-green'
+                            : 'bg-red-500/15 border-red-500/40 text-red-400'
                             }`}>
                             {ch}
                         </span>
@@ -957,8 +933,8 @@ function SentenceBuilderQuestion({ q, idx, answers, setAnswers, startTimer }) {
                         disabled={!availableIndices[i]}
                         onClick={() => handleWordClick(word)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 ${availableIndices[i]
-                                ? 'bg-neon-blue/10 text-neon-blue border-neon-blue/20 hover:bg-neon-blue/20 hover:scale-105 cursor-pointer'
-                                : 'bg-white/[0.02] text-white/10 border-white/[0.03] cursor-not-allowed'
+                            ? 'bg-neon-blue/10 text-neon-blue border-neon-blue/20 hover:bg-neon-blue/20 hover:scale-105 cursor-pointer'
+                            : 'bg-white/[0.02] text-white/10 border-white/[0.03] cursor-not-allowed'
                             }`}
                     >
                         {word}
@@ -989,6 +965,135 @@ function SentenceBuilderQuestion({ q, idx, answers, setAnswers, startTimer }) {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ─── DRAGGABLE ORDERING LIST ─────────────────────────────────────────────────
+function DraggableOrderingList({ items, onChange }) {
+    const [draggedIdx, setDraggedIdx] = useState(null);
+    const [overIdx, setOverIdx] = useState(null);
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleDragStart = (e, idx) => {
+        setDraggedIdx(idx);
+        setIsDragging(true);
+        // Set ghost image to be the element itself (default)
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(idx));
+    };
+
+    const handleDragOver = (e, idx) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (idx !== draggedIdx) setOverIdx(idx);
+    };
+
+    const handleDrop = (e, dropIdx) => {
+        e.preventDefault();
+        if (draggedIdx === null || draggedIdx === dropIdx) {
+            setDraggedIdx(null);
+            setOverIdx(null);
+            setIsDragging(false);
+            return;
+        }
+        const newItems = [...items];
+        const [moved] = newItems.splice(draggedIdx, 1);
+        newItems.splice(dropIdx, 0, moved);
+        onChange(newItems);
+        setDraggedIdx(null);
+        setOverIdx(null);
+        setIsDragging(false);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedIdx(null);
+        setOverIdx(null);
+        setIsDragging(false);
+    };
+
+    const moveUp = (idx) => {
+        if (idx === 0) return;
+        const arr = [...items];
+        [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+        onChange(arr);
+    };
+
+    const moveDown = (idx) => {
+        if (idx === items.length - 1) return;
+        const arr = [...items];
+        [arr[idx + 1], arr[idx]] = [arr[idx], arr[idx + 1]];
+        onChange(arr);
+    };
+
+    return (
+        <div className="space-y-1.5">
+            <p className="text-xs text-white/30 mb-3 flex items-center gap-1.5">
+                <GripVertical size={12} className="text-neon-blue/60" />
+                Drag items to arrange in the correct order:
+            </p>
+            {items.map((item, ii) => {
+                const isBeingDragged = draggedIdx === ii;
+                const isDropTarget = overIdx === ii && draggedIdx !== ii;
+
+                return (
+                    <div
+                        key={`${item}-${ii}`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, ii)}
+                        onDragOver={(e) => handleDragOver(e, ii)}
+                        onDrop={(e) => handleDrop(e, ii)}
+                        onDragEnd={handleDragEnd}
+                        className={`
+                            flex items-center gap-3 p-3 rounded-xl border transition-all duration-150 select-none
+                            ${isBeingDragged
+                                ? 'opacity-30 scale-[0.98] border-neon-blue/40 bg-neon-blue/5'
+                                : isDropTarget
+                                    ? 'border-neon-blue bg-neon-blue/10 shadow-[0_0_16px_rgba(0,209,255,0.15)] scale-[1.01]'
+                                    : 'bg-white/[0.02] border-white/[0.06] hover:border-white/10 hover:bg-white/[0.04]'
+                            }
+                            ${isDragging && !isBeingDragged ? 'cursor-grabbing' : 'cursor-grab'}
+                        `}
+                    >
+                        {/* Grip handle */}
+                        <div className={`shrink-0 transition-colors ${isDropTarget ? 'text-neon-blue' : 'text-white/20 hover:text-white/40'}`}>
+                            <GripVertical size={18} />
+                        </div>
+
+                        {/* Position number */}
+                        <span className={`text-xs font-bold w-5 text-center shrink-0 transition-colors ${isDropTarget ? 'text-neon-blue' : 'text-white/30'}`}>
+                            {ii + 1}
+                        </span>
+
+                        {/* Item text */}
+                        <span className={`text-sm flex-1 font-medium transition-colors ${isDropTarget ? 'text-white' : 'text-white/70'}`}>
+                            {item}
+                        </span>
+
+                        {/* Arrow fallback buttons */}
+                        <div className="flex flex-col gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
+                            <button
+                                type="button"
+                                disabled={ii === 0}
+                                onClick={() => moveUp(ii)}
+                                className="p-0.5 rounded text-white/20 hover:text-neon-blue disabled:opacity-10 disabled:cursor-not-allowed transition-colors"
+                                title="Move up"
+                            >
+                                <ChevronUp size={14} />
+                            </button>
+                            <button
+                                type="button"
+                                disabled={ii === items.length - 1}
+                                onClick={() => moveDown(ii)}
+                                className="p-0.5 rounded text-white/20 hover:text-neon-blue disabled:opacity-10 disabled:cursor-not-allowed transition-colors"
+                                title="Move down"
+                            >
+                                <ChevronDown size={14} />
+                            </button>
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }
