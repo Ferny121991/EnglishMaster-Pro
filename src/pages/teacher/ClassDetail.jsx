@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     BookOpen, Users, ClipboardList, ArrowLeft, Copy, Check,
     Plus, Calendar, Award, MessageSquare, Send, Clock, X, Search,
-    UserPlus, UserMinus, Pin, Trash2, Download, BarChart3, MessageCircle, KeyRound
+    UserPlus, UserMinus, Pin, Trash2, Download, BarChart3, MessageCircle, KeyRound,
+    FolderOpen, Link2, FileText, Video, Music, Image, Globe, ExternalLink, Package
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
@@ -23,7 +24,8 @@ export default function ClassDetail() {
         submissions, getClassAnalytics, exportClassGrades, getLeaderboard,
         getAssignmentCompletionRate,
         addClassMessage, deleteClassMessage, getClassMessages,
-        sendTeacherRequest, getTeacherRequestsForClass
+        sendTeacherRequest, getTeacherRequestsForClass,
+        addClassMaterial, deleteClassMaterial, getClassMaterials,
     } = useClasses();
     const toast = useToast();
 
@@ -113,8 +115,8 @@ export default function ClassDetail() {
     };
 
     const tabs = isTeacher
-        ? ['overview', 'students', 'assignments', 'announcements', 'chat']
-        : ['announcements', 'chat'];
+        ? ['overview', 'students', 'assignments', 'announcements', 'chat', 'materials']
+        : ['announcements', 'chat', 'materials'];
     const colorMap = { blue: 'from-neon-blue to-blue-600', purple: 'from-neon-purple to-purple-600', green: 'from-neon-green to-emerald-600', orange: 'from-neon-orange to-amber-600' };
 
     return (
@@ -452,6 +454,18 @@ export default function ClassDetail() {
                         toast={toast}
                     />
                 )}
+
+                {/* MATERIALS TAB */}
+                {tab === 'materials' && (
+                    <MaterialsTab
+                        classId={id}
+                        isTeacher={isTeacher}
+                        getClassMaterials={getClassMaterials}
+                        addClassMaterial={addClassMaterial}
+                        deleteClassMaterial={deleteClassMaterial}
+                        toast={toast}
+                    />
+                )}
             </div>
 
             <AnimatePresence>
@@ -740,6 +754,274 @@ function ChatTab({ classId, isTeacher, userProfile, addClassMessage, deleteClass
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ─── MATERIAL TYPE HELPERS ───────────────────────────────────────────────────
+const MATERIAL_CATEGORIES = [
+    { key: 'document', label: 'Document', icon: FileText, color: 'text-neon-blue', bg: 'bg-neon-blue/10', border: 'border-neon-blue/20', gradient: 'from-neon-blue to-cyan-400' },
+    { key: 'video', label: 'Video', icon: Video, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', gradient: 'from-red-500 to-orange-400' },
+    { key: 'audio', label: 'Audio', icon: Music, color: 'text-neon-purple', bg: 'bg-neon-purple/10', border: 'border-neon-purple/20', gradient: 'from-neon-purple to-fuchsia-400' },
+    { key: 'image', label: 'Image', icon: Image, color: 'text-neon-green', bg: 'bg-neon-green/10', border: 'border-neon-green/20', gradient: 'from-neon-green to-emerald-400' },
+    { key: 'link', label: 'Link / Website', icon: Globe, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/20', gradient: 'from-amber-400 to-yellow-500' },
+    { key: 'other', label: 'Other', icon: Package, color: 'text-white/50', bg: 'bg-white/[0.04]', border: 'border-white/10', gradient: 'from-white/20 to-white/10' },
+];
+
+function getCategoryConfig(key) {
+    return MATERIAL_CATEGORIES.find(c => c.key === key) || MATERIAL_CATEGORIES[5];
+}
+
+// ─── MATERIALS TAB ────────────────────────────────────────────────────────────
+function MaterialsTab({ classId, isTeacher, getClassMaterials, addClassMaterial, deleteClassMaterial, toast }) {
+    const materials = getClassMaterials(classId);
+    const [showForm, setShowForm] = useState(false);
+    const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
+    const [url, setUrl] = useState('');
+    const [category, setCategory] = useState('document');
+    const [saving, setSaving] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(null);
+
+    const resetForm = () => { setTitle(''); setDescription(''); setUrl(''); setCategory('document'); setShowForm(false); };
+
+    const handleAdd = async () => {
+        if (!title.trim()) { toast.warning('Please enter a title'); return; }
+        if (!url.trim()) { toast.warning('Please enter a download/link URL'); return; }
+        // Basic URL validation
+        try { new URL(url.trim()); } catch { toast.error('Please enter a valid URL (include https://)'); return; }
+        setSaving(true);
+        try {
+            await addClassMaterial(classId, { title: title.trim(), description: description.trim(), url: url.trim(), category });
+            toast.success('Material added!');
+            resetForm();
+        } catch (e) {
+            toast.error('Failed to add material');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDelete = async (id) => {
+        try {
+            await deleteClassMaterial(id);
+            toast.success('Material removed');
+            setConfirmDelete(null);
+        } catch (e) {
+            toast.error('Failed to remove material');
+        }
+    };
+
+    return (
+        <div className="space-y-5">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-purple to-fuchsia-500 flex items-center justify-center shadow-lg">
+                        <FolderOpen size={20} className="text-white" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-white">Class Materials</h3>
+                        <p className="text-xs text-white/40">{materials.length} resource{materials.length !== 1 ? 's' : ''} available</p>
+                    </div>
+                </div>
+                {isTeacher && !showForm && (
+                    <button
+                        onClick={() => setShowForm(true)}
+                        className="btn-neon flex items-center gap-2 text-sm px-4 py-2"
+                    >
+                        <Plus size={16} /> Add Material
+                    </button>
+                )}
+            </div>
+
+            {/* Teacher Add Form */}
+            <AnimatePresence>
+                {isTeacher && showForm && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="glass-card p-5 space-y-4 border border-neon-purple/20"
+                    >
+                        <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-semibold text-white flex items-center gap-2">
+                                <Link2 size={16} className="text-neon-purple" /> Add New Material
+                            </h4>
+                            <button onClick={resetForm} className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/10 transition-all">
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Category selector */}
+                        <div>
+                            <label className="block text-xs text-white/40 mb-2 uppercase tracking-wider font-bold">Category</label>
+                            <div className="flex flex-wrap gap-2">
+                                {MATERIAL_CATEGORIES.map(cat => {
+                                    const CatIcon = cat.icon;
+                                    return (
+                                        <button
+                                            key={cat.key}
+                                            type="button"
+                                            onClick={() => setCategory(cat.key)}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all
+                                                ${category === cat.key
+                                                    ? `${cat.bg} ${cat.border} ${cat.color} shadow-sm`
+                                                    : 'border-white/[0.06] text-white/40 hover:border-white/10 hover:text-white/60'}`}
+                                        >
+                                            <CatIcon size={13} /> {cat.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-white/40 mb-1.5 uppercase tracking-wider font-bold">Title *</label>
+                                <input
+                                    value={title}
+                                    onChange={e => setTitle(e.target.value)}
+                                    placeholder="e.g. Unit 3 Vocabulary PDF"
+                                    className="input-glass"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-white/40 mb-1.5 uppercase tracking-wider font-bold">Download / Link URL *</label>
+                                <div className="relative group">
+                                    <Link2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-neon-purple transition-colors" />
+                                    <input
+                                        value={url}
+                                        onChange={e => setUrl(e.target.value)}
+                                        placeholder="https://drive.google.com/..."
+                                        className="input-glass pl-10"
+                                    />
+                                </div>
+                                <p className="text-[10px] text-white/20 mt-1">Paste any link: Google Drive, Dropbox, YouTube, website, etc.</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-white/40 mb-1.5 uppercase tracking-wider font-bold">Description (optional)</label>
+                            <textarea
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="Brief description of this material..."
+                                className="input-glass h-16 resize-none"
+                            />
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={resetForm} className="btn-ghost text-sm px-4 py-2">Cancel</button>
+                            <button
+                                onClick={handleAdd}
+                                disabled={saving}
+                                className="btn-neon flex items-center gap-2 text-sm px-5 py-2 disabled:opacity-50"
+                            >
+                                {saving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={16} />}
+                                {saving ? 'Adding...' : 'Add Material'}
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Materials Grid */}
+            {materials.length === 0 ? (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="glass-card p-12 text-center"
+                >
+                    <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
+                        <FolderOpen size={28} className="text-white/20" />
+                    </div>
+                    <p className="text-white/40 text-sm font-medium">No materials yet</p>
+                    <p className="text-white/20 text-xs mt-1">
+                        {isTeacher ? 'Click "Add Material" to share download links with your students.' : 'Your teacher hasn\'t shared any materials yet.'}
+                    </p>
+                </motion.div>
+            ) : (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+                >
+                    {materials.map((mat, idx) => {
+                        const cfg = getCategoryConfig(mat.category);
+                        const CatIcon = cfg.icon;
+                        return (
+                            <motion.div
+                                key={mat.id}
+                                initial={{ opacity: 0, y: 16 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: idx * 0.05 }}
+                                className="glass-card overflow-hidden group hover:border-white/[0.12] transition-all"
+                            >
+                                {/* Top gradient bar */}
+                                <div className={`h-1 bg-gradient-to-r ${cfg.gradient}`} />
+
+                                <div className="p-4">
+                                    <div className="flex items-start gap-3 mb-3">
+                                        <div className={`w-11 h-11 rounded-xl ${cfg.bg} border ${cfg.border} flex items-center justify-center shrink-0`}>
+                                            <CatIcon size={20} className={cfg.color} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-semibold text-white text-sm leading-tight line-clamp-2 group-hover:text-white/90 transition-colors">
+                                                {mat.title}
+                                            </h4>
+                                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider mt-1 ${cfg.color}`}>
+                                                <CatIcon size={10} /> {cfg.label}
+                                            </span>
+                                        </div>
+                                        {isTeacher && (
+                                            <div className="shrink-0">
+                                                {confirmDelete === mat.id ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-white/40 px-1.5 py-1 rounded">No</button>
+                                                        <button onClick={() => handleDelete(mat.id)} className="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-1 rounded font-bold">Yes</button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setConfirmDelete(mat.id)}
+                                                        className="p-1.5 rounded-lg text-white/10 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                                                        title="Remove material"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {mat.description && (
+                                        <p className="text-xs text-white/40 mb-3 line-clamp-2 leading-relaxed">{mat.description}</p>
+                                    )}
+
+                                    <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/[0.04]">
+                                        <span className="text-[10px] text-white/20">
+                                            {new Date(mat.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                        </span>
+                                        <a
+                                            href={mat.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all
+                                                bg-gradient-to-r ${cfg.gradient} text-white hover:opacity-90 active:scale-95 shadow-sm`}
+                                            onClick={e => e.stopPropagation()}
+                                        >
+                                            {mat.category === 'link' || mat.category === 'video'
+                                                ? <><ExternalLink size={12} /> Open</>
+                                                : <><Download size={12} /> Download</>
+                                            }
+                                        </a>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+                </motion.div>
+            )}
         </div>
     );
 }

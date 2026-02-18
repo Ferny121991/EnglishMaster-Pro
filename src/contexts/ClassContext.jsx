@@ -41,6 +41,7 @@ export function ClassProvider({ children }) {
     const [submissions, setSubmissions] = useState([]);
     const [announcements, setAnnouncements] = useState([]);
     const [classMessages, setClassMessages] = useState([]);
+    const [classMaterials, setClassMaterials] = useState([]);
     const [allStudents, setAllStudents] = useState([]);
     const [teacherRequests, setTeacherRequests] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -114,6 +115,7 @@ export function ClassProvider({ children }) {
             setAssignments([]);
             setAnnouncements([]);
             setClassMessages([]);
+            setClassMaterials([]);
             return;
         }
 
@@ -138,6 +140,14 @@ export function ClassProvider({ children }) {
             unsubs.push(onSnapshot(annQ, (s) => {
                 setAnnouncements(prev => {
                     const others = prev.filter(a => !ids.includes(a.classId));
+                    return [...others, ...s.docs.map(d => ({ id: d.id, ...d.data() }))];
+                });
+            }));
+
+            const matQ = query(collection(db, 'materials'), where('classId', 'in', ids));
+            unsubs.push(onSnapshot(matQ, (s) => {
+                setClassMaterials(prev => {
+                    const others = prev.filter(m => !ids.includes(m.classId));
                     return [...others, ...s.docs.map(d => ({ id: d.id, ...d.data() }))];
                 });
             }));
@@ -612,6 +622,9 @@ export function ClassProvider({ children }) {
 
     const getClassAssignments = (classId) => assignments.filter(a => a.classId === classId);
     const getClassAnnouncements = (classId) => announcements.filter(a => a.classId === classId);
+    const getClassMaterials = (classId) => classMaterials
+        .filter(m => m.classId === classId)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const getStudentSubmissions = (studentId) => submissions.filter(s => s.studentId === studentId);
     const getAssignmentSubmissions = (assignmentId) => submissions.filter(s => s.assignmentId === assignmentId);
     const getStudentClasses = (studentId) => classes.filter(c => c.students?.includes(studentId));
@@ -837,8 +850,10 @@ export function ClassProvider({ children }) {
         pinAnnouncement,
         markAnnouncementRead,
         // Materials
+        classMaterials,
         addClassMaterial,
         deleteClassMaterial,
+        getClassMaterials,
         // Helpers
         getClassStudents,
         getClassAssignments,
