@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useClasses } from '../../contexts/ClassContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -389,6 +389,17 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
     ]);
     const [timeLimit, setTimeLimit] = useState(assignment?.timeLimit || 0);
 
+    const questionsEndRef = useRef(null);
+    const [lastAddedId, setLastAddedId] = useState(null);
+
+    useEffect(() => {
+        if (lastAddedId && questionsEndRef.current) {
+            questionsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, [lastAddedId]);
+
+    const computedTotalPoints = questions.reduce((acc, q) => acc + (Number(q.points) || 0), 0);
+
     const addQuestion = (qType = 'multiple-choice') => {
         const base = { id: `q${Date.now()}`, text: '', type: qType, points: 10 };
         if (qType === 'multiple-choice') {
@@ -414,7 +425,9 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
         } else {
             base.options = [];
         }
-        setQuestions([...questions, base]);
+        const newQuestions = [...questions, base];
+        setQuestions(newQuestions);
+        setLastAddedId(base.id);
     };
 
     const removeQuestion = (idx) => {
@@ -568,9 +581,16 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
 
                         <div className="space-y-4">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-white/5 pb-2 gap-2">
-                                <label className="text-xs text-white/50 uppercase tracking-wider font-bold">
-                                    Coursework Questions ({questions.length})
-                                </label>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-xs text-white/50 uppercase tracking-wider font-bold">
+                                        Coursework Questions ({questions.length})
+                                    </label>
+                                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-neon-blue/10 border border-neon-blue/30">
+                                        <Award size={12} className="text-neon-blue" />
+                                        <span className="text-xs font-bold text-neon-blue">{computedTotalPoints}</span>
+                                        <span className="text-[10px] text-neon-blue/60 font-bold uppercase">pts total</span>
+                                    </div>
+                                </div>
                                 <div className="flex flex-wrap gap-1.5">
                                     {['multiple-choice', 'true-false', 'fill-in-blank', 'short-answer', 'essay', 'ordering', 'matching', 'word-scramble', 'sentence-builder', 'categorize', 'error-correction', 'translation'].map(t => (
                                         <button key={t} type="button" onClick={() => addQuestion(t)} className="btn-ghost flex items-center gap-1 text-[10px] py-1 px-2 h-auto">
@@ -588,6 +608,7 @@ function AssignmentModal({ classes, assignment, onClose, onSave }) {
                                         initial={{ opacity: 0, x: -10 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         className="relative group/q"
+                                        ref={q.id === lastAddedId ? questionsEndRef : null}
                                     >
                                         <div className="absolute -left-3 top-4 w-6 h-6 rounded-full bg-white/[0.03] border border-white/10 flex items-center justify-center text-[10px] font-bold text-white/20 group-hover/q:text-neon-blue group-hover/q:border-neon-blue/30 transition-all">
                                             {qi + 1}
