@@ -21,8 +21,9 @@ export default function Grades() {
 
     const handleGrade = async (id, grade, questionScores) => {
         try {
-            await updateSubmission(id, { grade: parseInt(grade), questionScores, status: 'graded' });
-            toast.success('Grade saved!');
+            const numericGrade = Math.round(Number(grade));
+            await updateSubmission(id, { grade: numericGrade, questionScores, status: 'graded' });
+            toast.success(`Grade saved: ${numericGrade} pts`);
             setSelectedSub(null);
         } catch (e) {
             toast.error('Failed to save grade');
@@ -219,9 +220,14 @@ export default function Grades() {
 }
 
 function ReviewModal({ submission, assignment, student, onClose, onGrade, onRetake }) {
-    // Build per-question scores: auto-graded get calculated, manual start at 0
+    // Build per-question scores: auto-graded get calculated, manual start at saved value or 0
     const initScores = () => {
         const scores = {};
+        // Normalize Firestore questionScores (keys may be strings like "2", "3")
+        const savedScores = submission.questionScores || {};
+        const normalizedSaved = {};
+        Object.entries(savedScores).forEach(([k, v]) => { normalizedSaved[Number(k)] = v; });
+
         assignment?.questions?.forEach((q, idx) => {
             const studentAnswer = submission.answers?.[idx];
             if (q.type === 'multiple-choice' || q.type === 'true-false') {
@@ -239,15 +245,32 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade, onReta
                 const correct = q.items || [];
                 const isCorrect = JSON.stringify(studentAnswer) === JSON.stringify(correct);
                 scores[idx] = isCorrect ? (q.points || 0) : 0;
+            } else if (q.type === 'categorize') {
+                const cats = q.categories || [];
+                const allItems = cats.reduce((acc, cat, cIdx) => [...acc, ...cat.items.map(() => cIdx)], []);
+                const isCorrect = studentAnswer && typeof studentAnswer === 'object' &&
+                    allItems.every((correctCatIdx, itemIdx) => studentAnswer[itemIdx] === correctCatIdx);
+                scores[idx] = isCorrect ? (q.points || 0) : 0;
+            } else if (q.type === 'matching') {
+                const isCorrect = (q.pairs || []).every((pair, i) => studentAnswer?.[i] === pair.right);
+                scores[idx] = isCorrect ? (q.points || 0) : 0;
             } else {
-                // essay, short-answer — manual
-                scores[idx] = submission.questionScores?.[idx] ?? '';
+                // essay, short-answer — use previously saved score if available, else empty
+                const saved = normalizedSaved[idx];
+                scores[idx] = saved !== undefined ? Number(saved) : '';
             }
         });
         return scores;
     };
     const [questionScores, setQuestionScores] = useState(initScores);
-    const totalScore = Object.values(questionScores).reduce((sum, v) => sum + (Number(v) || 0), 0);
+
+    // Recalculate total whenever scores change — clamp each score to its max
+    const totalScore = assignment?.questions?.reduce((sum, q, idx) => {
+        const raw = questionScores[idx];
+        const val = parseFloat(raw);
+        if (isNaN(val)) return sum;
+        return sum + Math.min(Math.max(val, 0), q.points || 0);
+    }, 0) ?? 0;
 
     const QUESTION_LABELS = {
         'multiple-choice': 'Multiple Choice',
@@ -349,7 +372,12 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade, onReta
                                                     min="0"
                                                     max={q.points}
                                                     value={qScore}
-                                                    onChange={(e) => setQuestionScores({ ...questionScores, [idx]: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        const num = parseFloat(raw);
+                                                        const clamped = isNaN(num) ? '' : Math.min(Math.max(num, 0), q.points || 0);
+                                                        setQuestionScores({ ...questionScores, [idx]: clamped });
+                                                    }}
                                                     className="bg-transparent border-none text-sm text-neon-blue w-10 text-center focus:ring-0 p-0 font-bold"
                                                     placeholder="0"
                                                 />
@@ -455,7 +483,7 @@ function ReviewModal({ submission, assignment, student, onClose, onGrade, onReta
                     </div>
                     <button
                         onClick={() => onGrade(submission.id, totalScore, questionScores)}
-                        className="btn-neon h-12 px-6 sm:px-8 flex items-center justify-center gap-2 disabled:opacity-40"
+                        className="btn-neon h-12 px-6 sm:px-8 flex items-center justify-center gap-2"
                     >
                         <CheckCircle2 size={18} /> {submission.grade != null ? 'Update' : 'Save'} Grade
                     </button>
